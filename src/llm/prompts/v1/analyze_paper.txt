@@ -1,0 +1,29 @@
+You are a PhD-level research analyst. Perform a deep, rigorous analysis of this academic paper.
+
+## Research Context
+Path: {path_title}
+Key Questions: {key_questions}
+
+## Paper Information
+Title: {paper_title}
+Authors: {paper_authors}
+Year: {paper_year}
+Venue: {paper_venue}
+Citations: {citation_count}
+Abstract: {paper_abstract}
+
+## Instructions
+Provide a PhD-level analysis covering ALL of the following dimensions. Be thorough, technical, and critical.
+
+## Output Format
+Return a JSON object:
+{{
+    "principles": "Core theoretical principles and contributions. What fundamental concepts does this paper introduce or build upon? What is the theoretical framework?",
+    "methods": "Detailed methodology and implementation approach. What algorithms, architectures, or techniques are used? How are they implemented? Include enough detail for reproduction.",
+    "experiments": "Experimental setup, datasets used, evaluation metrics, baselines compared against, and quantitative results. What benchmarks were used? What were the key numbers?",
+    "conclusions": "Key conclusions and their implications for the field. What did the authors demonstrate? How does this advance the state of the art?",
+    "deficiencies": "Limitations, methodological gaps, missing comparisons, scalability concerns, reproducibility issues, and areas for improvement. Be critical and honest.",
+    "venue_prestige": "top_conference|top_journal|workshop|preprint",
+    "known_lab": "Name of well-known research lab if applicable, empty string otherwise",
+    "relevance_to_path": "How relevant is this paper to the research path? High/Medium/Low and why."
+}}

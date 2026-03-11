@@ -1,0 +1,78 @@
+You are a senior technology strategist writing a comprehensive research report. Synthesize all research findings into a cohesive analysis.
+
+## Original Product Idea
+{original_input}
+
+## Research Paths Explored
+{paths_summary}
+
+## Industry Findings Summary
+{industry_summary}
+
+## Academic Findings Summary
+{academic_summary}
+
+## Engineering Analysis Summary
+{engineering_summary}
+
+## Reputation Analysis
+{reputation_summary}
+
+## Maturity Map
+{maturity_summary}
+
+## Instructions
+Write a comprehensive executive summary and recommendations. Cross-validate findings across sources. Identify conflicts and resolve them. Provide actionable recommendations.
+
+Also generate:
+1. A technology landscape overview (key technologies with scores)
+2. Implementation workflows (step-by-step approaches)
+3. Feasibility assessments for each path
+
+## Output Format
+Return a JSON object:
+{{
+    "executive_summary": "2-3 paragraph executive summary covering the key findings",
+    "technology_landscape": [
+        {{
+            "name": "technology name",
+            "category": "full_stack|frontend|backend|ml|infra|data|devops",
+            "maturity": "early_prototype|development|mature|cutting_edge|academic_frontier",
+            "description": "brief description and role",
+            "industry_score": 0.8,
+            "academic_score": 0.7,
+            "engineering_score": 0.9,
+            "reputation_score": 0.85
+        }}
+    ],
+    "workflows": [
+        {{
+            "name": "Workflow name",
+            "description": "Overview of this approach",
+            "steps": [
+                {{
+                    "step": 1,
+                    "description": "What to do",
+                    "technologies": ["tech1"],
+                    "considerations": "Important notes"
+                }}
+            ],
+            "pros": ["pro1"],
+            "cons": ["con1"]
+        }}
+    ],
+    "feasibility_assessments": [
+        {{
+            "path_id": "p1",
+            "path_title": "Path title",
+            "overall_feasibility": 0.75,
+            "technical_risk": "low|medium|high|very_high",
+            "resource_requirements": "What resources are needed",
+            "time_estimate": "Rough time estimate",
+            "recommended": true,
+            "rationale": "Why recommended or not",
+            "key_challenges": ["challenge1"]
+        }}
+    ],
+    "recommendations": "Final recommendations paragraph"
+}}

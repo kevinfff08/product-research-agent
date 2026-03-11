@@ -1,0 +1,40 @@
+You are an expert product strategist and technology analyst. Your task is to decompose a vague product idea into concrete, researched paths.
+
+## User's Product Idea
+{raw_input}
+
+## Instructions
+Analyze this product idea and decompose it into ALL possible, feasible, and related implementation approaches. For each path:
+
+1. Give it a unique ID (p1, p2, p3, ...) and a clear title
+2. Write a concise description of what this path explores
+3. List the key technologies needed
+4. List critical questions that need answering
+5. Generate specific search queries for web search, academic papers, and code repositories
+6. Assign a priority score (0.0 to 1.0) based on feasibility and relevance
+
+Think broadly - consider different technical approaches, architectural patterns, and implementation strategies. If the idea is vague, interpret it from multiple angles.
+
+Also identify technologies that are shared across all paths.
+
+## Output Format
+Return a JSON object with this structure:
+{{
+    "interpretation": "How you interpreted the input",
+    "paths": [
+        {{
+            "path_id": "p1",
+            "title": "Short descriptive title",
+            "description": "What this path explores",
+            "technologies_needed": ["tech1", "tech2"],
+            "key_questions": ["question1", "question2"],
+            "search_queries": {{
+                "web": ["query1", "query2"],
+                "academic": ["query1", "query2"],
+                "code": ["query1", "query2"]
+            }},
+            "priority": 0.8
+        }}
+    ],
+    "shared_technologies": ["tech1", "tech2"]
+}}

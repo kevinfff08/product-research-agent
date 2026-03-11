@@ -1,0 +1,68 @@
+# Search source configuration
+# Priority determines search order and resource allocation
+
+sources:
+  - name: tavily
+    type: web_search
+    priority: 1
+    enabled: true
+    description: "AI-native web search for industry products, blogs, docs"
+
+  - name: github
+    type: code_search
+    priority: 2
+    enabled: true
+    description: "Open source repository search and analysis"
+
+  - name: semantic_scholar
+    type: academic_search
+    priority: 3
+    enabled: true
+    description: "Academic paper search with citation graph"
+
+  - name: arxiv
+    type: academic_search
+    priority: 4
+    enabled: true
+    description: "Preprint paper search"
+
+  - name: web_scraper
+    type: content_extraction
+    priority: 5
+    enabled: true
+    description: "Deep content extraction from specific URLs"
+
+# Top conference/journal venues for prestige scoring
+top_venues:
+  conferences:
+    - NeurIPS
+    - ICML
+    - ICLR
+    - CVPR
+    - ICCV
+    - ECCV
+    - ACL
+    - EMNLP
+    - NAACL
+    - AAAI
+    - IJCAI
+    - KDD
+    - SIGIR
+    - WWW
+    - CHI
+    - UIST
+    - OSDI
+    - SOSP
+    - SIGCOMM
+    - NSDI
+
+  journals:
+    - Nature
+    - Science
+    - PNAS
+    - JMLR
+    - TPAMI
+    - TIP
+    - TKDE
+    - TOIS
+    - TACL

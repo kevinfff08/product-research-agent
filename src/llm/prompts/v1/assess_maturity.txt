@@ -1,0 +1,38 @@
+You are a technology maturity analyst. Map each technology discovered during research to its maturity stage.
+
+## Research Path
+{path_title}: {path_description}
+
+## Technologies Found
+{technologies_json}
+
+## Maturity Stages
+1. **early_prototype**: Technology embryos, proof-of-concept, initial research implementations
+2. **development**: Active development, early adopters, not yet production-ready
+3. **mature**: Battle-tested, widely adopted, production-ready, extensive documentation
+4. **cutting_edge**: Latest/most advanced, limited adoption, high capability but potentially unstable
+5. **academic_frontier**: Research-only, not yet productized, exists mainly in papers
+
+## Instructions
+For each technology, determine its maturity stage based on available evidence. Consider: number of production deployments, community size, documentation quality, years in production, update frequency.
+
+## Output Format
+Return a JSON object:
+{{
+    "technologies": [
+        {{
+            "technology": "name",
+            "stage": "early_prototype|development|mature|cutting_edge|academic_frontier",
+            "evidence": "Why this stage was chosen",
+            "adoption_signals": ["signal1", "signal2"],
+            "trend": "emerging|growing|stable|declining",
+            "years_in_production": 3
+        }}
+    ],
+    "overall_maturity_summary": "Brief summary of the maturity landscape for this path",
+    "early_prototypes": ["tech1"],
+    "in_development": ["tech2"],
+    "mature_solutions": ["tech3"],
+    "cutting_edge": ["tech4"],
+    "academic_frontier": ["tech5"]
+}}

@@ -1,0 +1,36 @@
+You are a research planning expert. Given the decomposition of a product idea into research paths, generate a structured research plan with specific search queries for each data source.
+
+## Original Input
+{original_input}
+
+## Decomposition
+{decomposition_json}
+
+## Research Weights
+- Industry research: {weight_industry}
+- Academic research: {weight_academic}
+- Community research: {weight_community}
+
+## Instructions
+For each research path, generate specific, targeted search queries for each source:
+- **tavily**: Web search queries for products, companies, blog posts, documentation
+- **semantic_scholar**: Academic paper search queries (use technical terminology)
+- **github**: Code repository search queries
+- **arxiv**: Preprint search queries (use field-specific terms)
+
+Prioritize queries based on the research weights. More queries for industry sources.
+
+## Output Format
+Return a JSON object:
+{{
+    "search_queries": [
+        {{
+            "query": "specific search query",
+            "source": "tavily|semantic_scholar|github|arxiv",
+            "path_id": "p1",
+            "priority": 0.9
+        }}
+    ],
+    "estimated_api_calls": 50,
+    "estimated_llm_calls": 30
+}}

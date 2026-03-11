@@ -1,0 +1,59 @@
+You are a technology industry analyst. Assess the reputation and credibility of the following entities discovered during research.
+
+## Products and Companies
+{industry_summary}
+
+## Academic Sources
+{academic_summary}
+
+## Instructions
+Score each entity on a 0.0-1.0 scale across multiple dimensions. Consider:
+- Source type (peer-reviewed journal > top conference > workshop > blog > social media)
+- Recency (newer is better for technology, but seminal papers retain value)
+- Author/company reputation (known labs, big tech, well-funded startups)
+- Cross-validation (confirmed by multiple independent sources)
+- Community reception (GitHub stars, citations, user reviews)
+
+## Output Format
+Return a JSON object:
+{{
+    "companies": [
+        {{
+            "company_name": "name",
+            "category": "big_tech|established|startup|open_source_community",
+            "market_presence": "description",
+            "user_sentiment": "very_positive|positive|mixed|negative",
+            "notable_users": ["user1"],
+            "reputation_score": 0.8
+        }}
+    ],
+    "labs": [
+        {{
+            "lab_name": "name",
+            "institution": "university/company",
+            "notable_researchers": ["name1"],
+            "prestige_score": 0.9,
+            "notes": "why prestigious"
+        }}
+    ],
+    "venues": [
+        {{
+            "venue_name": "NeurIPS",
+            "venue_type": "top_conference|top_journal|workshop|preprint|blog",
+            "prestige_score": 0.95,
+            "notes": ""
+        }}
+    ],
+    "technology_scores": [
+        {{
+            "name": "technology name",
+            "source_type_score": 0.8,
+            "recency_score": 0.9,
+            "author_reputation_score": 0.7,
+            "cross_validation_score": 0.6,
+            "community_reception_score": 0.8,
+            "overall_score": 0.76
+        }}
+    ],
+    "summary": "Overall reputation assessment summary"
+}}

@@ -1,0 +1,41 @@
+research:
+  max_paths: 5                       # Max decomposition paths
+  max_search_results_per_query: 10   # Results per search query
+  max_papers_per_path: 15            # Max papers to analyze per path
+  max_repos_per_path: 10             # Max repos to analyze per path
+  max_blog_sources: 10               # Max blog/article sources per path
+
+weights:
+  industry: 0.60
+  academic: 0.25
+  community: 0.15
+
+api:
+  tavily:
+    search_depth: "advanced"         # "basic" or "advanced"
+    max_results: 10
+  semantic_scholar:
+    rate_limit_rps: 1.0              # Without API key
+    rate_limit_rps_keyed: 10.0       # With API key
+  github:
+    rate_limit_rps: 0.5              # Without token
+    rate_limit_rps_keyed: 5.0        # With token
+  arxiv:
+    rate_limit_rps: 0.3              # arXiv is sensitive to rate
+    max_results: 20
+  web_scraper:
+    timeout: 30
+    max_content_length: 50000        # chars
+
+llm:
+  default_max_tokens: 8192
+  decompose_temperature: 0.5        # More creative for brainstorming
+  analysis_temperature: 0.2         # More precise for analysis
+  synthesis_temperature: 0.3        # Balanced for report writing
+
+output:
+  default_format: "markdown"         # "markdown", "docx", or "both"
+  output_dir: "output"
+
+cache:
+  ttl_hours: 24                      # API response cache TTL

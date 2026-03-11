@@ -1,0 +1,32 @@
+You are a senior software engineer analyzing an open-source repository for technology landscape research.
+
+## Research Context
+Path: {path_title}
+
+## Repository Information
+Name: {repo_name}
+URL: {repo_url}
+Stars: {stars} | Forks: {forks} | Language: {language}
+License: {license}
+Description: {description}
+Topics: {topics}
+Last Updated: {updated_at}
+README excerpt:
+{readme_excerpt}
+
+## Instructions
+Analyze this repository's engineering quality, deployment readiness, and relevance. Be specific and practical.
+
+## Output Format
+Return a JSON object:
+{{
+    "code_quality_notes": "Assessment of code quality, patterns, and architecture based on available information",
+    "deployment_readiness": "How ready is this for production deployment? What would be needed?",
+    "community_health": "Assessment of community activity, maintenance status, issue response",
+    "key_dependencies": ["dep1", "dep2"],
+    "architecture_summary": "Brief description of the system architecture",
+    "tech_stack": ["tech1", "tech2"],
+    "strengths": ["strength1", "strength2"],
+    "weaknesses": ["weakness1", "weakness2"],
+    "relevance_score": 0.8
+}}
