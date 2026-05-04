@@ -27,8 +27,9 @@ def test_run_success(planner, mock_llm, sample_decomposition):
 
     plan = planner.run(decomposition=sample_decomposition)
 
-    assert len(plan.search_queries) == 2
-    assert plan.search_queries[0].source == "tavily"
+    assert len(plan.search_queries) >= 2
+    assert "tavily" in {q.source for q in plan.search_queries}
+    assert any(q.intent for q in plan.search_queries)
     assert plan.estimated_api_calls == 2
 
 
@@ -50,7 +51,7 @@ def test_run_with_weights(planner, mock_llm, sample_decomposition):
     weights = ResearchWeight(industry=0.8, academic=0.1, community=0.1)
     plan = planner.run(decomposition=sample_decomposition, weights=weights)
 
-    assert len(plan.search_queries) == 1
+    assert len(plan.search_queries) >= 1
     # Verify render_template was called with correct weights
     mock_llm.render_template.assert_called_once()
 
@@ -62,3 +63,22 @@ def test_fallback_plan_maps_sources(planner, sample_decomposition):
     assert "tavily" in sources
     assert "semantic_scholar" in sources
     assert "github" in sources
+
+
+def test_query_optimization_deduplicates_and_expands(planner, sample_decomposition):
+    from src.models.plan import SearchQuery
+
+    queries = [
+        SearchQuery(query="AI code review tools", source="tavily", path_id="p1", priority=0.5),
+        SearchQuery(query="  AI   code review tools ", source="tavily", path_id="p1", priority=0.9),
+    ]
+
+    optimized = planner._optimize_queries(sample_decomposition, queries)
+
+    matching = [
+        q for q in optimized
+        if q.path_id == "p1" and q.source == "tavily" and q.query == "  AI   code review tools "
+    ]
+    assert len(matching) == 1
+    assert matching[0].priority == 0.9
+    assert {"github", "semantic_scholar", "arxiv"}.issubset({q.source for q in optimized})

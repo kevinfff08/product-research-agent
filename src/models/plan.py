@@ -55,6 +55,10 @@ class SearchQuery(BaseModel):
     source: str  # "tavily", "semantic_scholar", "github", "arxiv"
     path_id: str
     priority: float = 0.5
+    intent: str = Field(
+        default="general",
+        description="Search intent such as product, repo, paper, benchmark, alternative",
+    )
 
 
 class ResearchPlan(BaseModel):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 from src.agents.base import BaseAgent
@@ -18,9 +19,25 @@ class EngineeringAnalyst(BaseAgent):
 
     agent_name = "engineering_analyst"
 
-    def __init__(self, llm: LLMClient, store: LocalStore, github: GitHubClient):
+    def __init__(
+        self,
+        llm: LLMClient,
+        store: LocalStore,
+        github: GitHubClient,
+        *,
+        max_code_queries: int = 8,
+        github_results_per_query: int = 10,
+        max_repo_analyses: int = 10,
+        api_concurrency: int = 5,
+        llm_concurrency: int = 3,
+    ):
         super().__init__(llm, store)
         self.github = github
+        self.max_code_queries = max_code_queries
+        self.github_results_per_query = github_results_per_query
+        self.max_repo_analyses = max_repo_analyses
+        self.api_concurrency = max(1, api_concurrency)
+        self.llm_concurrency = max(1, llm_concurrency)
 
     async def run(
         self,
@@ -43,7 +60,7 @@ class EngineeringAnalyst(BaseAgent):
         code_analyses, sources = await self._analyze_repos(repos, path)
 
         # Generate deployment assessment and recommendations via LLM
-        deployment, recommendations, tech_stack = self._assess_deployment(
+        deployment, recommendations, tech_stack = await self._assess_deployment(
             code_analyses, path,
         )
 
@@ -63,60 +80,71 @@ class EngineeringAnalyst(BaseAgent):
 
     async def _search_repos(self, queries: list[SearchQuery]) -> list[dict]:
         """Search GitHub for relevant repos."""
+        semaphore = asyncio.Semaphore(self.api_concurrency)
+
+        async def search_one(sq: SearchQuery) -> list[dict]:
+            async with semaphore:
+                try:
+                    return await self.github.search_repos(
+                        sq.query,
+                        limit=self.github_results_per_query,
+                    )
+                except Exception as exc:
+                    self.logger.warning("GitHub search failed for '%s': %s", sq.query, exc)
+                    return []
+
+        groups = await asyncio.gather(
+            *(search_one(sq) for sq in queries[: self.max_code_queries]),
+        )
         all_repos = []
         seen_urls = set()
-        for sq in queries[:5]:
-            try:
-                repos = await self.github.search_repos(sq.query, limit=5)
-                for r in repos:
-                    url = r.get("html_url", "")
-                    if url not in seen_urls:
-                        seen_urls.add(url)
-                        all_repos.append(r)
-            except Exception as exc:
-                self.logger.warning("GitHub search failed for '%s': %s", sq.query, exc)
+        for group in groups:
+            for r in group:
+                url = r.get("html_url", "")
+                if url not in seen_urls:
+                    seen_urls.add(url)
+                    all_repos.append(r)
         return all_repos
 
     async def _analyze_repos(
         self, repos: list[dict], path: ResearchPath,
     ) -> tuple[list[CodeAnalysis], list[SourceReference]]:
         """Deeply analyze repos for engineering quality."""
-        analyses = []
-        sources = []
+        semaphore = asyncio.Semaphore(self.llm_concurrency)
 
-        for repo_data in repos[:8]:
+        async def analyze_one(repo_data: dict) -> tuple[CodeAnalysis | None, SourceReference | None]:
             url = repo_data.get("html_url", "")
             owner, name = GitHubClient.parse_repo_url(url)
             if not owner:
-                continue
+                return None, None
 
             # Get README
-            readme = ""
             try:
                 readme = await self.github.get_readme(owner, name)
             except Exception:
-                pass
+                readme = ""
 
             # LLM analysis
-            llm_result = self._call_llm_json(
-                prompt=self._render_template(
-                    "analyze_repo",
-                    {
-                        "path_title": path.title,
-                        "repo_name": repo_data.get("full_name", f"{owner}/{name}"),
-                        "repo_url": url,
-                        "stars": repo_data.get("stargazers_count", 0),
-                        "forks": repo_data.get("forks_count", 0),
-                        "language": repo_data.get("language", ""),
-                        "license": (repo_data.get("license") or {}).get("spdx_id", ""),
-                        "description": repo_data.get("description", ""),
-                        "topics": ", ".join(repo_data.get("topics", [])),
-                        "updated_at": repo_data.get("updated_at", ""),
-                        "readme_excerpt": readme[:3000],
-                    },
-                ),
-                temperature=0.2,
-            )
+            async with semaphore:
+                llm_result = await self._call_llm_json_async(
+                    prompt=self._render_template(
+                        "analyze_repo",
+                        {
+                            "path_title": path.title,
+                            "repo_name": repo_data.get("full_name", f"{owner}/{name}"),
+                            "repo_url": url,
+                            "stars": repo_data.get("stargazers_count", 0),
+                            "forks": repo_data.get("forks_count", 0),
+                            "language": repo_data.get("language", ""),
+                            "license": (repo_data.get("license") or {}).get("spdx_id", ""),
+                            "description": repo_data.get("description", ""),
+                            "topics": ", ".join(repo_data.get("topics", [])),
+                            "updated_at": repo_data.get("updated_at", ""),
+                            "readme_excerpt": readme[:3000],
+                        },
+                    ),
+                    temperature=0.2,
+                )
 
             code_analysis = CodeAnalysis(repo_url=url)
             if llm_result and isinstance(llm_result, dict):
@@ -128,17 +156,22 @@ class EngineeringAnalyst(BaseAgent):
                 code_analysis.scalability_notes = "; ".join(llm_result.get("strengths", []))
                 code_analysis.test_coverage_notes = "; ".join(llm_result.get("weaknesses", []))
 
-            analyses.append(code_analysis)
-            sources.append(SourceReference(
+            source = SourceReference(
                 url=url,
                 title=repo_data.get("full_name", ""),
                 source_type=SourceType.REPO,
                 retrieved_at=datetime.now(timezone.utc).isoformat(),
-            ))
+            )
+            return code_analysis, source
 
+        analyzed = await asyncio.gather(
+            *(analyze_one(repo) for repo in repos[: self.max_repo_analyses]),
+        )
+        analyses = [analysis for analysis, _ in analyzed if analysis is not None]
+        sources = [source for _, source in analyzed if source is not None]
         return analyses, sources
 
-    def _assess_deployment(
+    async def _assess_deployment(
         self, code_analyses: list[CodeAnalysis], path: ResearchPath,
     ) -> tuple[DeploymentAssessment, str, list[str]]:
         """Use LLM to assess deployment readiness across all analyzed repos."""
@@ -150,7 +183,7 @@ class EngineeringAnalyst(BaseAgent):
             for ca in code_analyses
         )
 
-        result = self._call_llm_json(
+        result = await self._call_llm_json_async(
             prompt=(
                 f"Based on these repository analyses for '{path.title}':\n\n"
                 f"{repos_summary}\n\n"

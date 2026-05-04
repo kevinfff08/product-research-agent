@@ -20,10 +20,29 @@ class AcademicResearcher(BaseAgent):
 
     agent_name = "academic_researcher"
 
-    def __init__(self, llm: LLMClient, store: LocalStore, semantic_scholar: SemanticScholarClient, arxiv: ArxivClient):
+    def __init__(
+        self,
+        llm: LLMClient,
+        store: LocalStore,
+        semantic_scholar: SemanticScholarClient,
+        arxiv: ArxivClient,
+        *,
+        max_s2_queries: int = 5,
+        max_arxiv_queries: int = 3,
+        papers_per_query: int = 10,
+        max_paper_analyses: int = 10,
+        api_concurrency: int = 5,
+        llm_concurrency: int = 3,
+    ):
         super().__init__(llm, store)
         self.s2 = semantic_scholar
         self.arxiv = arxiv
+        self.max_s2_queries = max_s2_queries
+        self.max_arxiv_queries = max_arxiv_queries
+        self.papers_per_query = papers_per_query
+        self.max_paper_analyses = max_paper_analyses
+        self.api_concurrency = max(1, api_concurrency)
+        self.llm_concurrency = max(1, llm_concurrency)
 
     async def run(
         self,
@@ -39,10 +58,13 @@ class AcademicResearcher(BaseAgent):
             for q in path.search_queries.get("academic", [])
         ]
 
+        s2_queries = [q for q in a_queries if q.source == "semantic_scholar"] or a_queries
+        arxiv_queries = [q for q in a_queries if q.source == "arxiv"] or a_queries
+
         # Search both sources in parallel
         s2_results, arxiv_results = await asyncio.gather(
-            self._search_semantic_scholar(a_queries),
-            self._search_arxiv(a_queries),
+            self._search_semantic_scholar(s2_queries),
+            self._search_arxiv(arxiv_queries),
             return_exceptions=True,
         )
 
@@ -72,36 +94,68 @@ class AcademicResearcher(BaseAgent):
 
     async def _search_semantic_scholar(self, queries: list[SearchQuery]) -> list[dict]:
         """Search Semantic Scholar for papers."""
-        all_papers = []
+        semaphore = asyncio.Semaphore(self.api_concurrency)
+
+        async def search_one(sq: SearchQuery) -> list[dict]:
+            async with semaphore:
+                try:
+                    papers = await self.s2.search_papers(
+                        sq.query,
+                        limit=self.papers_per_query,
+                    )
+                except Exception as exc:
+                    self.logger.warning("S2 search failed for '%s': %s", sq.query, exc)
+                    return []
+            for paper in papers:
+                paper["_query"] = sq.query
+                paper["_intent"] = sq.intent
+            return papers
+
+        groups = await asyncio.gather(
+            *(search_one(sq) for sq in queries[: self.max_s2_queries]),
+        )
+        all_papers: list[dict] = []
         seen_ids = set()
-        for sq in queries[:5]:
-            try:
-                papers = await self.s2.search_papers(sq.query, limit=10)
-                for p in papers:
-                    pid = p.get("paperId", "")
-                    if pid and pid not in seen_ids:
-                        seen_ids.add(pid)
-                        p["_source"] = "semantic_scholar"
-                        all_papers.append(p)
-            except Exception as exc:
-                self.logger.warning("S2 search failed for '%s': %s", sq.query, exc)
+        for group in groups:
+            for p in group:
+                pid = p.get("paperId", "")
+                if pid and pid not in seen_ids:
+                    seen_ids.add(pid)
+                    p["_source"] = "semantic_scholar"
+                    all_papers.append(p)
         return all_papers
 
     async def _search_arxiv(self, queries: list[SearchQuery]) -> list[dict]:
         """Search arXiv for papers."""
-        all_papers = []
+        semaphore = asyncio.Semaphore(self.api_concurrency)
+
+        async def search_one(sq: SearchQuery) -> list[dict]:
+            async with semaphore:
+                try:
+                    papers = await self.arxiv.search(
+                        sq.query,
+                        max_results=self.papers_per_query,
+                    )
+                except Exception as exc:
+                    self.logger.warning("arXiv search failed for '%s': %s", sq.query, exc)
+                    return []
+            for paper in papers:
+                paper["_query"] = sq.query
+                paper["_intent"] = sq.intent
+            return papers
+
+        groups = await asyncio.gather(
+            *(search_one(sq) for sq in queries[: self.max_arxiv_queries]),
+        )
+        all_papers: list[dict] = []
         seen_ids = set()
-        for sq in queries[:3]:
-            try:
-                papers = await self.arxiv.search(sq.query, max_results=10)
-                for p in papers:
-                    aid = p.get("arxiv_id", "")
-                    if aid and aid not in seen_ids:
-                        seen_ids.add(aid)
-                        p["_source"] = "arxiv"
-                        all_papers.append(p)
-            except Exception as exc:
-                self.logger.warning("arXiv search failed for '%s': %s", sq.query, exc)
+        for group in groups:
+            for p in group:
+                aid = p.get("arxiv_id", "")
+                if aid and aid not in seen_ids:
+                    seen_ids.add(aid)
+                    p["_source"] = "arxiv"
+                    all_papers.append(p)
         return all_papers
 
     def _merge_papers(self, s2_papers: list[dict], arxiv_papers: list[dict]) -> list[dict]:
@@ -116,16 +170,15 @@ class AcademicResearcher(BaseAgent):
 
         # Sort by citation count (S2 papers) then by recency
         merged.sort(key=lambda p: p.get("citationCount", 0), reverse=True)
-        return merged[:20]  # Limit total papers
+        return merged[: max(self.max_paper_analyses, 1)]
 
     async def _analyze_papers(
         self, papers: list[dict], path: ResearchPath,
     ) -> tuple[list[PaperAnalysis], list[SourceReference]]:
         """Analyze papers with LLM for PhD-level insights."""
-        analyzed = []
-        sources = []
+        semaphore = asyncio.Semaphore(self.llm_concurrency)
 
-        for paper_data in papers[:10]:  # Limit LLM calls
+        async def analyze_one(paper_data: dict) -> tuple[PaperAnalysis, SourceReference]:
             source = paper_data.get("_source", "unknown")
 
             if source == "semantic_scholar":
@@ -136,22 +189,23 @@ class AcademicResearcher(BaseAgent):
             # LLM analysis for deeper insights
             abstract = paper_data.get("abstract") or paper_data.get("summary", "")
             if abstract:
-                llm_analysis = self._call_llm_json(
-                    prompt=self._render_template(
-                        "analyze_paper",
-                        {
-                            "path_title": path.title,
-                            "key_questions": "; ".join(path.key_questions[:3]),
-                            "paper_title": paper_analysis.title,
-                            "paper_authors": ", ".join(paper_analysis.authors[:5]),
-                            "paper_year": paper_analysis.year,
-                            "paper_venue": paper_analysis.venue,
-                            "citation_count": paper_analysis.citation_count,
-                            "paper_abstract": abstract[:3000],
-                        },
-                    ),
-                    temperature=0.2,
-                )
+                async with semaphore:
+                    llm_analysis = await self._call_llm_json_async(
+                        prompt=self._render_template(
+                            "analyze_paper",
+                            {
+                                "path_title": path.title,
+                                "key_questions": "; ".join(path.key_questions[:3]),
+                                "paper_title": paper_analysis.title,
+                                "paper_authors": ", ".join(paper_analysis.authors[:5]),
+                                "paper_year": paper_analysis.year,
+                                "paper_venue": paper_analysis.venue,
+                                "citation_count": paper_analysis.citation_count,
+                                "paper_abstract": abstract[:3000],
+                            },
+                        ),
+                        temperature=0.2,
+                    )
 
                 if llm_analysis and isinstance(llm_analysis, dict):
                     paper_analysis.principles = llm_analysis.get("principles", "")
@@ -162,14 +216,19 @@ class AcademicResearcher(BaseAgent):
                     paper_analysis.venue_prestige = llm_analysis.get("venue_prestige", "")
                     paper_analysis.known_lab = llm_analysis.get("known_lab", "")
 
-            analyzed.append(paper_analysis)
-            sources.append(SourceReference(
+            source_ref = SourceReference(
                 url=paper_analysis.url,
                 title=paper_analysis.title,
                 source_type=SourceType.PAPER,
                 retrieved_at=datetime.now(timezone.utc).isoformat(),
-            ))
+            )
+            return paper_analysis, source_ref
 
+        analyzed_pairs = await asyncio.gather(
+            *(analyze_one(paper_data) for paper_data in papers[: self.max_paper_analyses]),
+        )
+        analyzed = [paper for paper, _ in analyzed_pairs]
+        sources = [source for _, source in analyzed_pairs]
         return analyzed, sources
 
     def _build_from_s2(self, data: dict) -> PaperAnalysis:

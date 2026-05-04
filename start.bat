@@ -26,7 +26,11 @@ if "%LLM_PROXY_URL%"=="" set "LLM_PROXY_URL=http://localhost:8317"
 if "%CLIPROXYAPI_EXE%"=="" set "CLIPROXYAPI_EXE=C:\cliproxyapi\cli-proxy-api.exe"
 if "%CLIPROXYAPI_CONFIG%"=="" set "CLIPROXYAPI_CONFIG=C:\cliproxyapi\config.yaml"
 set "NEEDS_LLM=0"
+set "CLI_ARGS=%*"
+if "%~1"=="" set "CLI_ARGS=start"
 if /I "%~1"=="research" set "NEEDS_LLM=1"
+if /I "%~1"=="start" set "NEEDS_LLM=1"
+if "%~1"=="" set "NEEDS_LLM=1"
 
 REM Start CLIProxyAPI only when setup-token mode is requested and the proxy is not reachable.
 if "%NEEDS_LLM%"=="1" if /I "%LLM_MODE%"=="setup-token" (
@@ -54,14 +58,14 @@ echo [INFO] Running Product Research Agent
 echo.
 
 if /I "%CONDA_DEFAULT_ENV%"=="research_tools" (
-    python -m src %*
+    python -m src %CLI_ARGS%
 ) else (
     where conda >nul 2>nul
     if errorlevel 1 (
-        echo [ERROR] conda not found. Activate research_tools and run: python -m src %*
+        echo [ERROR] conda not found. Activate research_tools and run: python -m src %CLI_ARGS%
         exit /b 1
     )
-    conda run -n research_tools python -m src %*
+    conda run -n research_tools python -m src %CLI_ARGS%
 )
 
 endlocal

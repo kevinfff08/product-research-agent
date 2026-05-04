@@ -9,6 +9,14 @@ from src.models.plan import DecompositionResult, ResearchPlan, SearchQuery
 from src.models.common import ResearchWeight
 
 
+_SOURCE_LIMITS = {
+    "tavily": 8,
+    "github": 8,
+    "semantic_scholar": 5,
+    "arxiv": 4,
+}
+
+
 class ResearchPlanner(BaseAgent):
     """Generates a structured research plan with search queries for each source."""
 
@@ -50,7 +58,6 @@ class ResearchPlanner(BaseAgent):
             self.logger.warning("LLM returned invalid plan, using fallback queries")
             return self._fallback_plan(decomposition)
 
-        # Build search queries
         queries = []
         for q in result.get("search_queries", []):
             queries.append(SearchQuery(
@@ -58,7 +65,9 @@ class ResearchPlanner(BaseAgent):
                 source=q.get("source", "tavily"),
                 path_id=q.get("path_id", ""),
                 priority=float(q.get("priority", 0.5)),
+                intent=q.get("intent", "general"),
             ))
+        queries = self._optimize_queries(decomposition, queries)
 
         plan = ResearchPlan(
             original_input=decomposition.original_input,
@@ -112,6 +121,7 @@ class ResearchPlanner(BaseAgent):
                         path_id=path.path_id,
                         priority=path.priority,
                     ))
+        queries = self._optimize_queries(decomposition, queries)
         return ResearchPlan(
             original_input=decomposition.original_input,
             paths=decomposition.paths,
@@ -119,3 +129,91 @@ class ResearchPlanner(BaseAgent):
             estimated_api_calls=len(queries),
             estimated_llm_calls=len(queries),
         )
+
+    def _optimize_queries(
+        self,
+        decomposition: DecompositionResult,
+        queries: list[SearchQuery],
+    ) -> list[SearchQuery]:
+        """Expand, deduplicate, and cap queries by source/path for broader coverage."""
+        expanded = list(queries)
+        for path in decomposition.paths:
+            base_terms = [path.title, *path.technologies_needed[:4]]
+            base_terms.extend(path.search_queries.get("web", [])[:3])
+            for term in self._unique_terms(base_terms):
+                expanded.extend(
+                    [
+                        SearchQuery(
+                            query=f"{term} product landscape competitors",
+                            source="tavily",
+                            path_id=path.path_id,
+                            priority=path.priority,
+                            intent="product_landscape",
+                        ),
+                        SearchQuery(
+                            query=f"{term} alternatives comparison pricing",
+                            source="tavily",
+                            path_id=path.path_id,
+                            priority=max(path.priority - 0.05, 0.1),
+                            intent="alternatives",
+                        ),
+                        SearchQuery(
+                            query=f"{term} open source github",
+                            source="github",
+                            path_id=path.path_id,
+                            priority=path.priority,
+                            intent="repo_discovery",
+                        ),
+                        SearchQuery(
+                            query=f"{term} benchmark evaluation survey",
+                            source="semantic_scholar",
+                            path_id=path.path_id,
+                            priority=max(path.priority - 0.1, 0.1),
+                            intent="evidence",
+                        ),
+                        SearchQuery(
+                            query=f"{term} survey benchmark",
+                            source="arxiv",
+                            path_id=path.path_id,
+                            priority=max(path.priority - 0.15, 0.1),
+                            intent="preprint",
+                        ),
+                    ]
+                )
+
+        deduped: dict[tuple[str, str, str], SearchQuery] = {}
+        for query in expanded:
+            if not query.query.strip():
+                continue
+            key = (query.path_id, query.source, self._normalize_query(query.query))
+            existing = deduped.get(key)
+            if existing is None or query.priority > existing.priority:
+                deduped[key] = query
+
+        grouped: dict[tuple[str, str], list[SearchQuery]] = {}
+        for query in deduped.values():
+            grouped.setdefault((query.path_id, query.source), []).append(query)
+
+        optimized: list[SearchQuery] = []
+        for (_, source), group in grouped.items():
+            limit = _SOURCE_LIMITS.get(source, 5)
+            optimized.extend(
+                sorted(group, key=lambda q: q.priority, reverse=True)[:limit]
+            )
+        return sorted(optimized, key=lambda q: (q.path_id, q.source, -q.priority, q.query))
+
+    @staticmethod
+    def _unique_terms(terms: list[str]) -> list[str]:
+        seen: set[str] = set()
+        unique: list[str] = []
+        for term in terms:
+            cleaned = " ".join(term.split())
+            key = cleaned.lower()
+            if cleaned and key not in seen:
+                seen.add(key)
+                unique.append(cleaned)
+        return unique[:8]
+
+    @staticmethod
+    def _normalize_query(query: str) -> str:
+        return " ".join(query.lower().split())

@@ -1,4 +1,4 @@
-You are a senior technology strategist writing a comprehensive research report. Synthesize all research findings into a cohesive analysis.
+You are a senior technology strategist writing a decision-ready technology landscape report. Synthesize all research findings into a cohesive analysis that helps a builder choose what to build, buy, reuse, or avoid.
 
 ## Original Product Idea
 {original_input}
@@ -22,17 +22,54 @@ You are a senior technology strategist writing a comprehensive research report. 
 {maturity_summary}
 
 ## Instructions
-Write a comprehensive executive summary and recommendations. Cross-validate findings across sources. Identify conflicts and resolve them. Provide actionable recommendations.
+Write a high-quality report, not a catalogue. Use these rules:
+- Start from the user's decision: what should they do next, and why?
+- Every important claim must connect to evidence, uncertainty, and implication.
+- Cross-validate industry, academic, code, maturity, and reputation signals.
+- Call out contradictions, missing evidence, source weaknesses, and assumptions.
+- Prefer comparison matrices, tradeoffs, and recommended strategy over long lists.
+- Do not overstate confidence when sources are thin, stale, promotional, or unverified.
 
 Also generate:
+0. Research questions and methodology summary
 1. A technology landscape overview (key technologies with scores)
 2. Implementation workflows (step-by-step approaches)
 3. Feasibility assessments for each path
+4. A decision matrix comparing the explored options
+5. Key claims with supporting evidence, caveats, confidence, implications, and source URLs when available
+6. Evidence gaps, assumptions, confidence assessment, and recommended strategy
 
 ## Output Format
 Return a JSON object:
 {{
     "executive_summary": "2-3 paragraph executive summary covering the key findings",
+    "research_questions": [
+        "question this report answered"
+    ],
+    "methodology_summary": "How the evidence was gathered and compared, including source categories and limits",
+    "decision_matrix": [
+        {{
+            "option": "path or technology option",
+            "path_id": "p1",
+            "user_value": "high|medium|low with reason",
+            "technical_feasibility": "high|medium|low with reason",
+            "maturity": "early|developing|mature|frontier with reason",
+            "ecosystem_strength": "strong|moderate|weak with reason",
+            "cost_risk": "low|medium|high with reason",
+            "evidence_strength": "strong|moderate|thin with reason",
+            "verdict": "recommended|promising|watch|avoid with reason"
+        }}
+    ],
+    "key_claims": [
+        {{
+            "claim": "specific decision-relevant claim",
+            "supporting_evidence": ["evidence point tied to product/paper/repo/source"],
+            "contradicting_evidence": ["counterpoint, limitation, or missing proof"],
+            "confidence": "high|medium|low",
+            "implication": "what this means for the product decision",
+            "source_urls": ["https://source.example"]
+        }}
+    ],
     "technology_landscape": [
         {{
             "name": "technology name",
@@ -74,5 +111,9 @@ Return a JSON object:
             "key_challenges": ["challenge1"]
         }}
     ],
+    "evidence_gaps": ["important missing source or uncertainty"],
+    "assumptions": ["assumption used in the analysis"],
+    "confidence_assessment": "overall confidence and why",
+    "recommended_strategy": "clear build/buy/partner/research strategy",
     "recommendations": "Final recommendations paragraph"
 }}

@@ -19,6 +19,14 @@ For each research path, generate specific, targeted search queries for each sour
 - **arxiv**: Preprint search queries (use field-specific terms)
 
 Prioritize queries based on the research weights. More queries for industry sources.
+Use varied intents so the execution layer can fan out search:
+- product_landscape: products, competitors, pricing, official docs
+- alternatives: comparisons, "best X", "X vs Y", adoption notes
+- repo_discovery: open-source implementations and maintained libraries
+- evidence: benchmarks, evaluations, surveys, failure modes
+- community: user complaints, issues, HN/Reddit/Product Hunt discussions
+
+Avoid near-duplicate queries. Prefer concrete nouns and domain terms over generic prompts.
 
 ## Output Format
 Return a JSON object:
@@ -28,7 +36,8 @@ Return a JSON object:
             "query": "specific search query",
             "source": "tavily|semantic_scholar|github|arxiv",
             "path_id": "p1",
-            "priority": 0.9
+            "priority": 0.9,
+            "intent": "product_landscape|alternatives|repo_discovery|evidence|community"
         }}
     ],
     "estimated_api_calls": 50,

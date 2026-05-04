@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 
 from src.agents.base import BaseAgent
@@ -14,7 +13,7 @@ from src.models.maturity import MaturityAssessment
 from src.models.reputation import ReputationReport
 from src.models.report import (
     ResearchReport, TechnologyEntry, ImplementationWorkflow,
-    WorkflowStep, FeasibilityAssessment,
+    WorkflowStep, FeasibilityAssessment, DecisionMatrixRow, EvidenceClaim,
 )
 from src.models.common import MaturityStage, SourceReference
 
@@ -90,7 +89,40 @@ class ReportGenerator(BaseAgent):
 
         if result and isinstance(result, dict):
             report.executive_summary = result.get("executive_summary", "")
+            report.research_questions = self._string_list(result.get("research_questions", []))
+            report.methodology_summary = result.get("methodology_summary", "")
+            report.evidence_gaps = self._string_list(result.get("evidence_gaps", []))
+            report.assumptions = self._string_list(result.get("assumptions", []))
+            report.confidence_assessment = result.get("confidence_assessment", "")
+            report.recommended_strategy = result.get("recommended_strategy", "")
             report.recommendations = result.get("recommendations", "")
+
+            for row in result.get("decision_matrix", []):
+                report.decision_matrix.append(DecisionMatrixRow(
+                    option=row.get("option", "") or row.get("path_title", ""),
+                    path_id=row.get("path_id", ""),
+                    user_value=row.get("user_value", ""),
+                    technical_feasibility=row.get("technical_feasibility", ""),
+                    maturity=row.get("maturity", ""),
+                    ecosystem_strength=row.get("ecosystem_strength", ""),
+                    cost_risk=row.get("cost_risk", ""),
+                    evidence_strength=row.get("evidence_strength", ""),
+                    verdict=row.get("verdict", ""),
+                ))
+
+            for claim in result.get("key_claims", []):
+                report.key_claims.append(EvidenceClaim(
+                    claim=claim.get("claim", ""),
+                    supporting_evidence=self._string_list(
+                        claim.get("supporting_evidence", []),
+                    ),
+                    contradicting_evidence=self._string_list(
+                        claim.get("contradicting_evidence", []),
+                    ),
+                    confidence=claim.get("confidence", ""),
+                    implication=claim.get("implication", ""),
+                    source_urls=self._string_list(claim.get("source_urls", [])),
+                ))
 
             for tech in result.get("technology_landscape", []):
                 maturity_str = tech.get("maturity", "development")
@@ -143,6 +175,15 @@ class ReportGenerator(BaseAgent):
             len(report.all_sources),
         )
         return report
+
+    @staticmethod
+    def _string_list(value: object) -> list[str]:
+        """Coerce an LLM value into a compact list of strings."""
+        if isinstance(value, list):
+            return [str(item) for item in value if str(item).strip()]
+        if isinstance(value, str) and value.strip():
+            return [value]
+        return []
 
     def _summarize_paths(self, decomp: DecompositionResult) -> str:
         parts = []

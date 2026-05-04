@@ -1,59 +1,65 @@
 # 产品技术调研 Agent
 
-这是一个本地优先的命令行研究工具。它接收一个模糊的产品想法，自动拆解研究路径，并汇总产业产品、学术论文、开源实现、工程可行性、技术成熟度和来源信誉，最后生成 Markdown 或 DOCX 报告。
+这是一个本地优先的命令行调研工具。它接收两阶段输入：先输入一个短标题，再输入更具体的细致描述。系统会据此拆解研究路径，并行搜索产业产品、学术论文和开源实现，评估工程可行性、技术成熟度和来源可信度，最后生成可复核的 Markdown 或 DOCX 调研报告。
 
-## 适用场景
+项目目标不是罗列搜索结果，而是形成可决策的技术 landscape：哪些路线值得做，哪些能力可以复用，哪些风险需要先验证，以及证据强度是否足够支撑结论。
 
-- 判断一个产品想法是否已有成熟方案。
-- 梳理某个技术方向的产业产品、论文和开源实现。
-- 为原型开发选择技术路线、依赖栈和风险控制点。
-- 生成可继续人工精修的技术 landscape 报告。
+## 核心能力
 
-## 当前能力
-
-- 想法拆解：把一句产品描述拆成多个可检索研究路径。
-- 搜索规划：为 Web、GitHub、Semantic Scholar 和 arXiv 生成查询。
-- 并行研究：同时运行产业、学术和工程分析。
-- 信誉评分：综合公司、实验室、论文场所和社区信号。
-- 成熟度映射：按 `early_prototype`、`development`、`mature`、`cutting_edge`、`academic_frontier` 归类。
-- 报告输出：支持 `markdown`、`docx`、`both` 三种格式。
+- 两阶段输入：标题式输入用于命名和聚焦，详细描述用于说明目标用户、功能、约束和具体问题。
+- 交互式启动：默认入口是 `start` 向导，每一轮都会提示必填/选填、输入格式和示例。
+- 多 Provider LLM：支持 `openai`、`deepseek`、`google` 三类 OpenAI-compatible 调用，也保留 CLIProxyAPI 的 `setup-token` 模式。
+- 并行子 Agent：每个研究路径都会并发运行产业、学术、工程三个子 Agent；每个子 Agent 内部也会并发检索和分析。
+- 扩展型搜索规划：围绕产品、竞品、开源仓库、论文、benchmark、社区反馈生成多意图查询，并做去重和限额。
+- 决策型报告：报告包含研究问题、方法、决策矩阵、关键 claim、证据和反证、置信度、证据缺口、建议策略。
+- 统一命名：日志、session 和报告输出都使用 `日期时间_标题` 命名，例如 `20260504_120000_实时视频翻译工具.md`。
+- 非轮转日志：每次运行写入一个独立日志文件，不再按文件大小切分轮转。
 
 ## 快速开始
 
-Windows：
+Windows 交互式启动：
 
 ```bat
-start.bat research "实时视频翻译工具" --depth comprehensive --format both
+start.bat
 ```
 
-Linux/macOS：
+Linux/macOS 交互式启动：
 
 ```bash
 chmod +x start.sh
-./start.sh research "实时视频翻译工具" --depth comprehensive --format both
+./start.sh
 ```
 
-也可以直接运行 Python CLI：
+也可以显式调用 CLI 的 `start` 命令：
 
 ```bash
-python -m src research "AI 代码审查工具"
-python -m src research "实时视频翻译工具" --depth deep --max-paths 3
+python -m src start
+```
+
+交互式流程会依次询问：
+
+1. 标题式输入（必填）：一句短标题，例如“实时视频翻译工具”。
+2. 二阶段细致描述（必填）：可输入多段文字，单独一行 `END` 结束。
+3. 关注重点（选填）：逗号分隔，例如“低延迟, 开源实现, 学术评测”。
+4. 调研深度（选填）：`quick`、`comprehensive`、`deep`。
+5. 最大研究路径数（选填）：1-10 的整数。
+6. 输出格式（选填）：`markdown`、`docx`、`both`。
+
+## 非交互命令
+
+如果已经知道完整输入，可以直接运行：
+
+```bash
+python -m src research "实时视频翻译工具" --description "面向跨国会议团队，要求实时字幕、语音翻译、低延迟和会议软件集成。" --depth deep --max-paths 3 --format both
+```
+
+常用管理命令：
+
+```bash
 python -m src list-sessions
 python -m src show <session_id>
 python -m src status <session_id>
 ```
-
-## 环境要求
-
-- Python 3.14+，推荐使用 conda 环境 `research_tools`。
-- Codex 可用的 OpenAI-compatible LLM 通道。
-- Tavily API key，用于产业和 Web 搜索。
-
-可选：
-
-- Semantic Scholar API key：提高学术搜索限额。
-- GitHub token：提高 GitHub API 限额。
-- `python-docx`：生成 DOCX 报告时需要。
 
 ## 安装
 
@@ -69,7 +75,7 @@ pip install -e ".[dev]"
 pip install -e ".[docx]"
 ```
 
-## 配置
+## 环境配置
 
 复制环境变量模板：
 
@@ -77,25 +83,37 @@ pip install -e ".[docx]"
 cp .env.example .env
 ```
 
-常用变量：
+LLM 调用由两个变量共同决定：
+
+| 变量 | 可选值 | 说明 |
+| --- | --- | --- |
+| `LLM_MODE` | `setup-token` / `api-key` | `setup-token` 走 CLIProxyAPI；`api-key` 直连 Provider |
+| `LLM_PROVIDER` | `openai` / `deepseek` / `google` | 选择直连 Provider，也用于默认模型选择 |
+| `LLM_MODEL` | 任意可用模型名 | 必须与代理或 Provider 暴露的模型一致 |
+| `LLM_PROXY_URL` | URL | CLIProxyAPI 地址，默认 `http://localhost:8317` |
+
+Provider Key：
+
+| Provider | 必填 Key | 可选 Base URL |
+| --- | --- | --- |
+| OpenAI | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| DeepSeek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
+| Google Gemini OpenAI-compatible | `GOOGLE_API_KEY` | `GOOGLE_BASE_URL` |
+
+外部搜索 Key：
 
 | 变量 | 是否必需 | 说明 |
 | --- | --- | --- |
-| `LLM_MODE` | 是 | `setup-token` 或 `api-key` |
-| `LLM_MODEL` | 否 | Codex 模型名，默认 `gpt-5.4` |
-| `LLM_PROXY_URL` | setup-token 模式 | CLIProxyAPI 地址，默认 `http://localhost:8317` |
-| `OPENAI_API_KEY` | api-key 模式 | 直连 OpenAI-compatible API 时使用 |
-| `OPENAI_BASE_URL` | 否 | 自定义 OpenAI-compatible API 地址 |
-| `TAVILY_API_KEY` | 是 | Tavily 搜索 API key |
-| `SEMANTIC_SCHOLAR_API_KEY` | 否 | Semantic Scholar API key |
-| `GITHUB_TOKEN` | 否 | GitHub personal access token |
+| `TAVILY_API_KEY` | 推荐 | Web 和产品搜索 |
+| `SEMANTIC_SCHOLAR_API_KEY` | 可选 | 提高 Semantic Scholar 限额 |
+| `GITHUB_TOKEN` | 可选 | 提高 GitHub API 限额 |
 
-研究参数在 `config/default.yaml` 中维护，包括最大路径数、API 限额、LLM token 数和温度设置。不要把密钥写入 YAML；密钥只放在 `.env` 或系统环境变量里。
+不要把真实密钥写入 `config/default.yaml` 或文档。密钥只放在 `.env` 或系统环境变量中。
 
-## 架构
+## 调研流水线
 
 ```text
-用户输入
+标题 + 详细描述
   |
   v
 IdeaDecomposer
@@ -103,9 +121,9 @@ IdeaDecomposer
   v
 ResearchPlanner
   |
-  +--> IndustryResearcher
-  +--> AcademicResearcher
-  +--> EngineeringAnalyst
+  +--> Path 1: IndustryResearcher || AcademicResearcher || EngineeringAnalyst
+  +--> Path 2: IndustryResearcher || AcademicResearcher || EngineeringAnalyst
+  +--> Path N: IndustryResearcher || AcademicResearcher || EngineeringAnalyst
   |
   v
 ReputationScorer + MaturityMapper
@@ -117,34 +135,60 @@ ReportGenerator
   +--> DocxReporter
 ```
 
-核心目录：
+当前不会引入 LangGraph、CrewAI、向量数据库或 embedding。项目保持 CLI、本地文件存储和自定义 Python Agent 类。
+
+## 目录结构
 
 ```text
 src/
-  cli.py                  # Typer CLI
+  cli.py                  # Typer CLI 和 start 交互式向导
   orchestrator.py         # 异步流水线协调器
-  llm/client.py           # Codex/OpenAI-compatible LLM 客户端
-  agents/                 # 各研究 Agent
-  apis/                   # 外部 API 客户端
-  models/                 # Pydantic v2 模型
+  logging_config.py       # 非轮转日志配置
+  llm/client.py           # OpenAI-compatible/CLIProxyAPI LLM 客户端
+  agents/                 # 调研子 Agent
+  apis/                   # Tavily、Semantic Scholar、GitHub、arXiv、Web scraper
+  models/                 # Pydantic v2 数据模型
   storage/local_store.py  # 本地 JSON 会话存储
   reporters/              # Markdown/DOCX 输出
-  utils/                  # JSON 修复、文本处理、重试工具
-config/
-  default.yaml            # 非密钥运行配置
+  utils/                  # 命名、JSON 修复、文本处理、重试工具
+config/default.yaml       # 非密钥运行配置
+docs/research/            # 当前调研和设计依据
 docs/archive/             # 过时说明和历史调研资料
 tests/                    # pytest 测试
 ```
 
-## 输出
+## 输出和日志
 
-默认输出到 `output/`：
+默认输出到 `output/`，日志写入 `logs/`。二者都使用同一个 run name：`YYYYMMDD_HHMMSS_标题`。
 
-- `--format markdown`：生成 `output/<session_id>.md`
-- `--format docx`：生成 `output/<session_id>.docx`
-- `--format both`：同时生成两种格式
+示例：
 
-运行数据保存在 `data/`，日志保存在 `logs/`。这三个目录都是运行产物，不进入 Git。
+```text
+output/20260504_120000_实时视频翻译工具.md
+output/20260504_120000_实时视频翻译工具.docx
+logs/20260504_120000_实时视频翻译工具.log
+data/research/20260504_120000_实时视频翻译工具/
+```
+
+日志文件不会按大小轮转；一次运行对应一个日志文件。
+
+## 配置调优
+
+`config/default.yaml` 控制并发和搜索预算：
+
+| 字段 | 说明 |
+| --- | --- |
+| `research.max_paths` | 最大研究路径数 |
+| `research.max_parallel_paths` | 同时运行的研究路径数 |
+| `research.api_concurrency` | 每个 Agent 内部 API 并发数 |
+| `research.llm_analysis_concurrency` | 每个 Agent 内部 LLM 分析并发数 |
+| `research.max_*_per_path` | 每条路径的查询、论文、仓库、网页分析上限 |
+
+提高这些值可以增加覆盖面，但会增加 API 调用、LLM token 和运行时间。
+
+## 报告结构
+
+报告包括 Executive Summary、Research Question and Method、Decision Matrix、Key Claims and Evidence、Technology Landscape、Maturity Map、Implementation Workflows、行业/学术/工程发现、Reputation、Feasibility、Confidence/Gaps/Assumptions、Recommendations 和 Sources。
 
 ## 测试
 
@@ -162,19 +206,6 @@ C:\Path\To\anaconda3\envs\research_tools\python.exe -m pytest tests/ -v
 conda run -n research_tools python -m pytest tests/ -v
 conda run -n research_tools python -m pytest tests/ -v --cov=src --cov-report=term-missing
 ```
-
-## 维护规则
-
-- LLM 只允许 Codex/OpenAI-compatible 路径，不引入其他 LLM SDK。
-- `render_template()` 只渲染 prompt，不发起 LLM 调用。
-- 结构化 LLM 输出必须走 `generate_json()`，并用 Pydantic 模型兜底验证。
-- 新功能必须配对应测试。
-- 根目录只保留活跃入口文件；历史说明和调研资料放入 `docs/archive/`。
-- `.env.example` 只放占位符，不能写入真实密钥或本机绝对路径。
-
-## 历史资料
-
-旧的代理说明、早期架构调研文档和本地助手设置已归档到 `docs/archive/legacy-2026-05-04/`。这些文件仅作历史参考，不再代表当前运行方式。
 
 ## License
 

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from logging.handlers import RotatingFileHandler
+from logging import FileHandler
 
-from src.logging_config import setup_logging, get_logger, _ROOT_LOGGER_NAME
+from src.logging_config import current_log_path, setup_logging, get_logger, _ROOT_LOGGER_NAME
 
 
 class TestLogging:
@@ -18,21 +17,22 @@ class TestLogging:
         logger = get_logger("test")
         assert isinstance(logger, logging.Logger)
 
-    def test_setup_logging_creates_handler(self):
-        """Verify setup creates a RotatingFileHandler with correct settings."""
-        # setup_logging may have been called already, so check root logger
+    def test_setup_logging_creates_file_handler(self, tmp_path):
+        """Verify setup creates a non-rotating FileHandler named by run."""
+        log_path = setup_logging(
+            run_name="20260504_Test_Title",
+            log_dir=tmp_path,
+            force=True,
+        )
         root = logging.getLogger(_ROOT_LOGGER_NAME)
-        # Find RotatingFileHandler in handlers
-        rotating_handlers = [
+        file_handlers = [
             h for h in root.handlers
-            if isinstance(h, RotatingFileHandler)
+            if isinstance(h, FileHandler)
         ]
-        # If setup_logging was called, there should be at least one
-        # (may not be called in test environment, so this is conditional)
-        if rotating_handlers:
-            handler = rotating_handlers[0]
-            assert handler.maxBytes == 10 * 1024 * 1024  # 10 MB
-            assert handler.backupCount == 999
+        assert file_handlers
+        assert log_path.name == "20260504_Test_Title.log"
+        assert current_log_path() == log_path
+        assert type(file_handlers[0]).__name__ == "FileHandler"
 
     def test_logger_hierarchy(self):
         parent = get_logger("agents")

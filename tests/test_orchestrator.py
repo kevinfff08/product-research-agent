@@ -28,6 +28,7 @@ def orchestrator(tmp_path, mock_config):
     """Create an Orchestrator with mocked LLM and API clients."""
     with patch.dict("os.environ", {
         "LLM_MODE": "api-key",
+        "LLM_PROVIDER": "openai",
         "OPENAI_API_KEY": "sk-test",
         "TAVILY_API_KEY": "test",
     }):

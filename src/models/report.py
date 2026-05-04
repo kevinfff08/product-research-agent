@@ -59,6 +59,31 @@ class FeasibilityAssessment(BaseModel):
     key_challenges: list[str] = Field(default_factory=list)
 
 
+class DecisionMatrixRow(BaseModel):
+    """Decision matrix row comparing one research path or technology option."""
+
+    option: str = ""
+    path_id: str = ""
+    user_value: str = ""
+    technical_feasibility: str = ""
+    maturity: str = ""
+    ecosystem_strength: str = ""
+    cost_risk: str = ""
+    evidence_strength: str = ""
+    verdict: str = ""
+
+
+class EvidenceClaim(BaseModel):
+    """A key report claim tied to supporting and conflicting evidence."""
+
+    claim: str = ""
+    supporting_evidence: list[str] = Field(default_factory=list)
+    contradicting_evidence: list[str] = Field(default_factory=list)
+    confidence: str = ""
+    implication: str = ""
+    source_urls: list[str] = Field(default_factory=list)
+
+
 class ResearchReport(BaseModel):
     """Final comprehensive research report."""
 
@@ -69,6 +94,14 @@ class ResearchReport(BaseModel):
 
     # Executive summary
     executive_summary: str = ""
+    research_questions: list[str] = Field(default_factory=list)
+    methodology_summary: str = ""
+    decision_matrix: list[DecisionMatrixRow] = Field(default_factory=list)
+    key_claims: list[EvidenceClaim] = Field(default_factory=list)
+    evidence_gaps: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    confidence_assessment: str = ""
+    recommended_strategy: str = ""
 
     # Technology landscape
     technology_landscape: list[TechnologyEntry] = Field(default_factory=list)

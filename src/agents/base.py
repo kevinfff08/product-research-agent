@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -45,6 +46,22 @@ class BaseAgent(ABC):
                 raw[:200],
             )
         return parsed
+
+    async def _call_llm_json_async(
+        self,
+        prompt: str,
+        system: str = "",
+        temperature: float = 0.2,
+        max_tokens: int | None = None,
+    ) -> dict | list | None:
+        """Call the sync LLM client from async agents without blocking the loop."""
+        return await asyncio.to_thread(
+            self._call_llm_json,
+            prompt,
+            system,
+            temperature,
+            max_tokens,
+        )
 
     def _call_llm_text(
         self,

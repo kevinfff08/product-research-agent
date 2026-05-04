@@ -56,6 +56,31 @@ def full_inputs(sample_decomposition):
 def test_run_success(generator, mock_llm, full_inputs):
     mock_llm.generate_json.return_value = json.dumps({
         "executive_summary": "A comprehensive analysis...",
+        "research_questions": ["Should we build or reuse an AI code review stack?"],
+        "methodology_summary": "Compared products, papers, repositories, and maturity signals.",
+        "decision_matrix": [
+            {
+                "option": "Static Analysis + LLM",
+                "path_id": "p1",
+                "user_value": "high",
+                "technical_feasibility": "high",
+                "maturity": "mature",
+                "ecosystem_strength": "strong",
+                "cost_risk": "medium",
+                "evidence_strength": "moderate",
+                "verdict": "recommended",
+            }
+        ],
+        "key_claims": [
+            {
+                "claim": "AST plus LLM is the lowest-risk starting point.",
+                "supporting_evidence": ["Existing products and repos use this split."],
+                "contradicting_evidence": ["End-to-end agents may catch broader issues."],
+                "confidence": "medium",
+                "implication": "Start with parser-grounded reviews.",
+                "source_urls": ["https://example.com"],
+            }
+        ],
         "technology_landscape": [
             {
                 "name": "LLM Code Review",
@@ -88,6 +113,10 @@ def test_run_success(generator, mock_llm, full_inputs):
                 "key_challenges": ["Integration complexity"],
             }
         ],
+        "evidence_gaps": ["No latency benchmark was available."],
+        "assumptions": ["The product targets Python first."],
+        "confidence_assessment": "Medium confidence due to limited benchmark data.",
+        "recommended_strategy": "Build a narrow parser-grounded MVP first.",
         "recommendations": "Start with the quick approach.",
     })
 
@@ -100,6 +129,10 @@ def test_run_success(generator, mock_llm, full_inputs):
     assert len(report.workflows) == 1
     assert len(report.feasibility_assessments) == 1
     assert report.feasibility_assessments[0].recommended is True
+    assert report.research_questions
+    assert len(report.decision_matrix) == 1
+    assert len(report.key_claims) == 1
+    assert report.evidence_gaps == ["No latency benchmark was available."]
     assert len(report.all_sources) == 3  # Deduplicated
 
 

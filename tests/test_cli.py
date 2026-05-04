@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from src.cli import app
+from src.models.report import ResearchReport
 
 
 runner = CliRunner()
@@ -73,3 +75,48 @@ def test_status_with_data(tmp_path):
     result = runner.invoke(app, ["status", "test-session", "--data-dir", str(tmp_path)])
     assert result.exit_code == 0
     assert "completed" in result.stdout
+
+
+def test_start_guided_flow(monkeypatch, tmp_path):
+    class FakeOrchestrator:
+        def __init__(self, config_path, data_dir="data", output_dir="output"):
+            self.output_dir = Path(output_dir)
+            self.output_paths = []
+
+        async def run(self, request):
+            output = self.output_dir / f"{request.run_name}.md"
+            self.output_paths = [output]
+            return ResearchReport(
+                title=f"Technology Landscape: {request.title}",
+                session_id=request.run_name,
+                original_input=request.raw_input,
+                executive_summary="Done",
+            )
+
+    monkeypatch.setattr("src.cli.Orchestrator", FakeOrchestrator)
+    monkeypatch.setattr("src.cli.build_run_name", lambda title: "20260504_120000_Test_Title")
+
+    result = runner.invoke(
+        app,
+        [
+            "start",
+            "--data-dir", str(tmp_path / "data"),
+            "--output-dir", str(tmp_path / "output"),
+            "--log-dir", str(tmp_path / "logs"),
+        ],
+        input=(
+            "Test Title\n"
+            "Detailed paragraph one.\n"
+            "Detailed paragraph two.\n"
+            "END\n"
+            "latency, open source\n"
+            "quick\n"
+            "2\n"
+            "markdown\n"
+        ),
+    )
+
+    assert result.exit_code == 0
+    assert "标题式输入" in result.stdout
+    assert "二阶段细致描述" in result.stdout
+    assert "20260504_120000_Test_Title" in result.stdout

@@ -9,7 +9,7 @@ docx = pytest.importorskip("docx")
 from docx import Document
 
 from src.models.common import MaturityStage, SourceReference, SourceType
-from src.models.report import ResearchReport, TechnologyEntry
+from src.models.report import ResearchReport, TechnologyEntry, DecisionMatrixRow, EvidenceClaim
 from src.reporters.docx_reporter import DocxReporter
 
 
@@ -21,6 +21,28 @@ def docx_report() -> ResearchReport:
         generated_at="2026-05-04T00:00:00Z",
         original_input="AI code review tool",
         executive_summary="This report analyzes the AI code review landscape.",
+        research_questions=["Should we build or reuse an AI code review stack?"],
+        methodology_summary="Compared products, papers, repositories, and maturity signals.",
+        decision_matrix=[
+            DecisionMatrixRow(
+                option="Static Analysis + LLM",
+                path_id="p1",
+                user_value="high",
+                technical_feasibility="high",
+                maturity="mature",
+                ecosystem_strength="strong",
+                cost_risk="medium",
+                evidence_strength="moderate",
+                verdict="recommended",
+            ),
+        ],
+        key_claims=[
+            EvidenceClaim(
+                claim="Parser-grounded review is practical.",
+                supporting_evidence=["tree-sitter is mature."],
+                confidence="medium",
+            ),
+        ],
         technology_landscape=[
             TechnologyEntry(
                 name="tree-sitter",
@@ -53,6 +75,8 @@ def test_generate_creates_docx(tmp_path, docx_report):
     text = "\n".join(p.text for p in document.paragraphs)
     assert "Tech Landscape: AI Code Review" in text
     assert "Executive Summary" in text
+    assert "Research Question and Method" in text
+    assert "Key Claims and Evidence" in text
     assert "Start with the simple approach." in text
     assert document.tables
 

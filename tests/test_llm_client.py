@@ -36,7 +36,10 @@ def test_render_template_not_found():
 
 def test_render_template_no_llm_call():
     """Ensure render_template does NOT make any API call."""
-    with patch.dict("os.environ", {"LLM_MODE": "api-key", "OPENAI_API_KEY": "sk-test"}):
+    with patch.dict(
+        "os.environ",
+        {"LLM_MODE": "api-key", "LLM_PROVIDER": "openai", "OPENAI_API_KEY": "sk-test"},
+    ):
         client = LLMClient()
 
     # If this tried to call the API, it would fail since "sk-test" is not valid
@@ -50,6 +53,7 @@ def test_setup_token_normalizes_proxy_url():
         "os.environ",
         {
             "LLM_MODE": "setup-token",
+            "LLM_PROVIDER": "openai",
             "LLM_PROXY_URL": "http://localhost:8317",
             "LLM_MODEL": "gpt-5.4",
         },
@@ -74,7 +78,12 @@ def test_generate_posts_chat_completion():
 
     with patch.dict(
         "os.environ",
-        {"LLM_MODE": "api-key", "OPENAI_API_KEY": "sk-test", "LLM_MODEL": "gpt-5.4"},
+        {
+            "LLM_MODE": "api-key",
+            "LLM_PROVIDER": "openai",
+            "OPENAI_API_KEY": "sk-test",
+            "LLM_MODEL": "gpt-5.4",
+        },
     ):
         client = LLMClient()
         result = client.generate("Say OK", system="system prompt", max_tokens=8)
@@ -102,6 +111,7 @@ def test_generate_raises_model_routing_error():
         "os.environ",
         {
             "LLM_MODE": "setup-token",
+            "LLM_PROVIDER": "openai",
             "LLM_PROXY_URL": "http://localhost:8317",
             "LLM_MODEL": "gpt-5.5",
         },
@@ -110,3 +120,65 @@ def test_generate_raises_model_routing_error():
         with pytest.raises(RuntimeError, match="Non-retryable LLM model routing error"):
             client.generate("test")
         client.close()
+
+
+def test_api_key_mode_uses_deepseek_defaults():
+    with patch.dict(
+        "os.environ",
+        {
+            "LLM_MODE": "api-key",
+            "LLM_PROVIDER": "deepseek",
+            "DEEPSEEK_API_KEY": "ds-test",
+        },
+    ):
+        client = LLMClient()
+
+    assert client.base_url == "https://api.deepseek.com"
+    assert client.model == "deepseek-v4-flash"
+    assert client.api_key == "ds-test"
+
+
+def test_api_key_mode_uses_google_openai_compatible_base_url():
+    with patch.dict(
+        "os.environ",
+        {
+            "LLM_MODE": "api-key",
+            "LLM_PROVIDER": "google",
+            "GOOGLE_API_KEY": "google-test",
+        },
+    ):
+        client = LLMClient()
+
+    assert client.base_url == "https://generativelanguage.googleapis.com/v1beta/openai"
+    assert client.model == "gemini-2.5-flash"
+    assert client.api_key == "google-test"
+
+
+def test_unsupported_provider_raises():
+    with patch.dict("os.environ", {"LLM_PROVIDER": "unknown"}):
+        with pytest.raises(ValueError, match="Unsupported LLM_PROVIDER"):
+            LLMClient()
+
+
+@respx.mock
+def test_list_models_reads_openai_compatible_inventory():
+    respx.get("http://localhost:8317/v1/models").mock(
+        return_value=httpx.Response(
+            200,
+            json={"data": [{"id": "gpt-5.4"}, {"id": "gpt-5.3-codex"}]},
+        )
+    )
+
+    with patch.dict(
+        "os.environ",
+        {
+            "LLM_MODE": "setup-token",
+            "LLM_PROVIDER": "openai",
+            "LLM_PROXY_URL": "http://localhost:8317",
+        },
+    ):
+        client = LLMClient()
+        models = client.list_models()
+        client.close()
+
+    assert models == ["gpt-5.4", "gpt-5.3-codex"]

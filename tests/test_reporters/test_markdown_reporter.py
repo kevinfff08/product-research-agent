@@ -8,7 +8,7 @@ from pathlib import Path
 from src.reporters.markdown_reporter import MarkdownReporter
 from src.models.report import (
     ResearchReport, TechnologyEntry, ImplementationWorkflow,
-    WorkflowStep, FeasibilityAssessment,
+    WorkflowStep, FeasibilityAssessment, DecisionMatrixRow, EvidenceClaim,
 )
 from src.models.industry import IndustryResearchResult, ProductInfo, RepoAnalysis
 from src.models.academic import AcademicResearchResult, PaperAnalysis
@@ -31,6 +31,34 @@ def full_report():
         generated_at="2025-01-01T00:00:00Z",
         original_input="AI code review tool",
         executive_summary="This report analyzes the AI code review landscape.",
+        research_questions=["Should we build or reuse an AI code review stack?"],
+        methodology_summary="Compared products, papers, repositories, and maturity signals.",
+        decision_matrix=[
+            DecisionMatrixRow(
+                option="Static Analysis + LLM",
+                path_id="p1",
+                user_value="high",
+                technical_feasibility="high",
+                maturity="mature",
+                ecosystem_strength="strong",
+                cost_risk="medium",
+                evidence_strength="moderate",
+                verdict="recommended",
+            ),
+        ],
+        key_claims=[
+            EvidenceClaim(
+                claim="Parser-grounded review is a practical first step.",
+                supporting_evidence=["tree-sitter is mature."],
+                contradicting_evidence=["Agentic approaches may cover broader context."],
+                confidence="medium",
+                implication="Start narrow, then expand.",
+                source_urls=["https://example.com"],
+            ),
+        ],
+        evidence_gaps=["Need latency benchmark."],
+        assumptions=["Python-first MVP."],
+        confidence_assessment="Medium confidence.",
         technology_landscape=[
             TechnologyEntry(
                 name="tree-sitter",
@@ -135,6 +163,9 @@ def test_render_contains_all_sections(reporter, full_report):
 
     assert "# Tech Landscape:" in md
     assert "## Executive Summary" in md
+    assert "## Research Question and Method" in md
+    assert "## Decision Matrix" in md
+    assert "## Key Claims and Evidence" in md
     assert "## Technology Landscape" in md
     assert "## Technology Maturity Map" in md
     assert "## Implementation Workflows" in md
@@ -143,6 +174,7 @@ def test_render_contains_all_sections(reporter, full_report):
     assert "## Engineering Analysis" in md
     assert "## Reputation & Credibility" in md
     assert "## Feasibility Assessment" in md
+    assert "## Confidence, Gaps, and Assumptions" in md
     assert "## Recommendations" in md
     assert "## Sources" in md
 

@@ -1,14 +1,16 @@
-"""Centralized logging for ProductResearch with RotatingFileHandler.
+"""Centralized logging for ProductResearch.
 
-Logs rotate at 10 MB per file. Old logs are NEVER deleted (backupCount=999).
+Each research run writes to one UTF-8 log file named with date + title.
+Logs do not rotate by file size.
 """
 
 from __future__ import annotations
 
 import logging
 import sys
-from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
+from src.utils.naming import safe_title_for_path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _LOG_DIR = _PROJECT_ROOT / "logs"
@@ -16,58 +18,66 @@ _ROOT_LOGGER_NAME = "productresearch"
 _FORMAT = "%(asctime)s | %(levelname)-7s | %(name)-40s | %(message)s"
 
 _INITIALIZED = False
+_CURRENT_LOG_PATH: Path | None = None
 
 
-def setup_logging(level: int = logging.INFO) -> None:
-    """Configure project-wide logging with rotating file handler.
+def setup_logging(
+    level: int = logging.INFO,
+    *,
+    run_name: str = "product_research",
+    log_dir: str | Path = "logs",
+    force: bool = False,
+) -> Path:
+    """Configure project-wide logging and return the active log path.
 
-    Call once at application entry point (cli.py).
-    Subsequent calls are no-ops.
-
-    Log files rotate at 10 MB. Up to 999 backup files are kept
-    (effectively unlimited -- old logs are NEVER destroyed).
+    The handler is a plain ``FileHandler``. It never rotates by size; each
+    research run should pass a date-plus-title ``run_name``.
     """
-    global _INITIALIZED
-    if _INITIALIZED:
-        return
-    _INITIALIZED = True
+    global _INITIALIZED, _CURRENT_LOG_PATH
 
-    _LOG_DIR.mkdir(parents=True, exist_ok=True)
+    resolved_log_dir = Path(log_dir)
+    if not resolved_log_dir.is_absolute():
+        resolved_log_dir = _PROJECT_ROOT / resolved_log_dir
+    resolved_log_dir.mkdir(parents=True, exist_ok=True)
+
+    log_path = resolved_log_dir / f"{safe_title_for_path(run_name, max_length=120)}.log"
+    if _INITIALIZED and not force and _CURRENT_LOG_PATH == log_path:
+        return log_path
 
     formatter = logging.Formatter(fmt=_FORMAT, datefmt="%Y-%m-%d %H:%M:%S")
+    root = logging.getLogger(_ROOT_LOGGER_NAME)
+    root.setLevel(level)
+    root.propagate = False
 
-    # RotatingFileHandler: 10 MB per file, keep 999 backups (never destroy)
-    file_handler = RotatingFileHandler(
-        _LOG_DIR / "product_research.log",
-        maxBytes=10 * 1024 * 1024,
-        backupCount=999,
-        encoding="utf-8",
-    )
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
+        handler.close()
+
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
 
-    # Console handler - only WARNING+ to keep CLI output clean
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setLevel(logging.WARNING)
     console_handler.setFormatter(formatter)
 
-    root = logging.getLogger(_ROOT_LOGGER_NAME)
-    root.setLevel(level)
     root.addHandler(file_handler)
     root.addHandler(console_handler)
 
+    _INITIALIZED = True
+    _CURRENT_LOG_PATH = log_path
+
     root.info("=" * 72)
-    root.info("ProductResearch logging started - log dir: %s", _LOG_DIR)
+    root.info("ProductResearch logging started - log file: %s", log_path)
     root.info("=" * 72)
+    return log_path
+
+
+def current_log_path() -> Path | None:
+    """Return the active log file path, if logging has been configured."""
+    return _CURRENT_LOG_PATH
 
 
 def get_logger(name: str) -> logging.Logger:
-    """Get a child logger under the ``productresearch`` namespace.
-
-    Usage::
-
-        from src.logging_config import get_logger
-        logger = get_logger("agents.decomposer")
-        logger.info("decomposing idea ...")
-    """
+    """Get a child logger under the ``productresearch`` namespace."""
     return logging.getLogger(f"{_ROOT_LOGGER_NAME}.{name}")

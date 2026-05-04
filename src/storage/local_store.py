@@ -10,6 +10,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from src.logging_config import get_logger
+from src.utils.naming import build_run_name
 
 logger = get_logger("storage")
 
@@ -33,15 +34,27 @@ class LocalStore:
     def cache_dir(self) -> Path:
         return self.data_dir / "cache"
 
-    def create_session(self, description: str = "") -> str:
+    def create_session(
+        self,
+        description: str = "",
+        *,
+        title: str = "",
+        detailed_description: str = "",
+        session_id: str = "",
+    ) -> str:
         """Create a new research session and return its ID."""
-        session_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:6]
+        session_id = session_id or build_run_name(title or description)
         session_dir = self.data_dir / "research" / session_id
+        if session_dir.exists():
+            session_id = f"{session_id}_{uuid.uuid4().hex[:6]}"
+            session_dir = self.data_dir / "research" / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
 
         meta = {
             "session_id": session_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
+            "title": title,
+            "detailed_description": detailed_description,
             "description": description,
             "status": "started",
         }

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
+from typing import Any
 
 import yaml
 from dotenv import load_dotenv
@@ -37,6 +38,7 @@ from src.agents.report_generator import ReportGenerator
 # Reporter
 from src.reporters.docx_reporter import DocxReporter
 from src.reporters.markdown_reporter import MarkdownReporter
+from src.utils.naming import build_run_name
 
 load_dotenv()
 logger = get_logger("orchestrator")
@@ -55,6 +57,7 @@ class Orchestrator:
         self.store = LocalStore(data_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        research_config = self.config.get("research", {})
 
         # Build LLM client
         self.llm = LLMClient(
@@ -81,13 +84,41 @@ class Orchestrator:
         self.decomposer = IdeaDecomposer(self.llm, self.store)
         self.planner = ResearchPlanner(self.llm, self.store)
         self.industry_researcher = IndustryResearcher(
-            self.llm, self.store, self.tavily, self.github, self.scraper,
+            self.llm,
+            self.store,
+            self.tavily,
+            self.github,
+            self.scraper,
+            max_web_queries=research_config.get("max_web_queries_per_path", 10),
+            web_results_per_query=research_config.get("max_search_results_per_query", 10),
+            max_code_queries=research_config.get("max_code_queries_per_path", 8),
+            github_results_per_query=research_config.get("max_github_results_per_query", 10),
+            max_web_analyses=research_config.get("max_blog_sources", 10),
+            max_repo_analyses=research_config.get("max_repos_per_path", 10),
+            api_concurrency=research_config.get("api_concurrency", 5),
+            llm_concurrency=research_config.get("llm_analysis_concurrency", 3),
         )
         self.academic_researcher = AcademicResearcher(
-            self.llm, self.store, self.s2, self.arxiv,
+            self.llm,
+            self.store,
+            self.s2,
+            self.arxiv,
+            max_s2_queries=research_config.get("max_academic_queries_per_path", 5),
+            max_arxiv_queries=research_config.get("max_arxiv_queries_per_path", 4),
+            papers_per_query=research_config.get("max_papers_per_query", 15),
+            max_paper_analyses=research_config.get("max_papers_per_path", 15),
+            api_concurrency=research_config.get("api_concurrency", 5),
+            llm_concurrency=research_config.get("llm_analysis_concurrency", 3),
         )
         self.engineering_analyst = EngineeringAnalyst(
-            self.llm, self.store, self.github,
+            self.llm,
+            self.store,
+            self.github,
+            max_code_queries=research_config.get("max_code_queries_per_path", 8),
+            github_results_per_query=research_config.get("max_github_results_per_query", 10),
+            max_repo_analyses=research_config.get("max_repos_per_path", 10),
+            api_concurrency=research_config.get("api_concurrency", 5),
+            llm_concurrency=research_config.get("llm_analysis_concurrency", 3),
         )
         self.reputation_scorer = ReputationScorer(self.llm, self.store)
         self.maturity_mapper = MaturityMapper(self.llm, self.store)
@@ -116,9 +147,19 @@ class Orchestrator:
         5. Generate final report
         6. Write Markdown output
         """
-        session_id = self.store.create_session(description=request.raw_input[:200])
-        logger.info("Starting research pipeline: session=%s, input='%s'",
-                     session_id, request.raw_input[:80])
+        run_name = request.run_name or build_run_name(request.title)
+        session_id = self.store.create_session(
+            description=request.raw_input[:200],
+            title=request.title,
+            detailed_description=request.detailed_description,
+            session_id=run_name,
+        )
+        logger.info(
+            "Starting research pipeline: session=%s, title='%s', input='%s'",
+            session_id,
+            request.title,
+            request.raw_input[:80],
+        )
 
         try:
             # Step 1: Decompose
@@ -157,46 +198,49 @@ class Orchestrator:
 
             # Step 3: Parallel research
             self.store.update_session_status(session_id, "researching")
-            industry_results = []
-            academic_results = []
-            engineering_results = []
-
-            for path in decomposition.paths:
-                pq = path_queries.get(path.path_id, {})
-                web_queries = pq.get("tavily", [])
-                code_queries = pq.get("github", [])
-                academic_queries = pq.get("semantic_scholar", [])
-
-                # Run all three researchers in parallel for this path
-                ind_task = self.industry_researcher.run(
-                    path=path, web_queries=web_queries, code_queries=code_queries,
+            max_parallel_paths = self.config.get("research", {}).get("max_parallel_paths", 3)
+            path_semaphore = asyncio.Semaphore(max(1, int(max_parallel_paths)))
+            research_tasks = [
+                self._run_path_research(
+                    path,
+                    path_queries.get(path.path_id, {}),
+                    path_semaphore,
                 )
-                acad_task = self.academic_researcher.run(
-                    path=path, queries=academic_queries,
-                )
-                eng_task = self.engineering_analyst.run(
-                    path=path, code_queries=code_queries,
-                )
+                for path in decomposition.paths
+            ]
+            outcomes = await asyncio.gather(*research_tasks, return_exceptions=True)
 
-                results = await asyncio.gather(
-                    ind_task, acad_task, eng_task,
-                    return_exceptions=True,
-                )
+            industry_by_path: dict[str, Any] = {}
+            academic_by_path: dict[str, Any] = {}
+            engineering_by_path: dict[str, Any] = {}
 
-                if isinstance(results[0], Exception):
-                    logger.error("Industry research failed for %s: %s", path.path_id, results[0])
-                else:
-                    industry_results.append(results[0])
+            for path, outcome in zip(decomposition.paths, outcomes, strict=False):
+                if isinstance(outcome, Exception):
+                    logger.error("Research subagents failed for %s: %s", path.path_id, outcome)
+                    continue
+                path_id, industry_result, academic_result, engineering_result = outcome
+                if industry_result is not None:
+                    industry_by_path[path_id] = industry_result
+                if academic_result is not None:
+                    academic_by_path[path_id] = academic_result
+                if engineering_result is not None:
+                    engineering_by_path[path_id] = engineering_result
 
-                if isinstance(results[1], Exception):
-                    logger.error("Academic research failed for %s: %s", path.path_id, results[1])
-                else:
-                    academic_results.append(results[1])
-
-                if isinstance(results[2], Exception):
-                    logger.error("Engineering analysis failed for %s: %s", path.path_id, results[2])
-                else:
-                    engineering_results.append(results[2])
+            industry_results = [
+                industry_by_path[path.path_id]
+                for path in decomposition.paths
+                if path.path_id in industry_by_path
+            ]
+            academic_results = [
+                academic_by_path[path.path_id]
+                for path in decomposition.paths
+                if path.path_id in academic_by_path
+            ]
+            engineering_results = [
+                engineering_by_path[path.path_id]
+                for path in decomposition.paths
+                if path.path_id in engineering_by_path
+            ]
 
             # Save intermediate results
             for i, ir in enumerate(industry_results):
@@ -215,10 +259,10 @@ class Orchestrator:
             self.store.save_model(f"research/{session_id}/reputation.json", reputation_report)
 
             maturity_assessments = []
-            for i, path in enumerate(decomposition.paths):
-                ind = industry_results[i] if i < len(industry_results) else None
-                acad = academic_results[i] if i < len(academic_results) else None
-                eng = engineering_results[i] if i < len(engineering_results) else None
+            for path in decomposition.paths:
+                ind = industry_by_path.get(path.path_id)
+                acad = academic_by_path.get(path.path_id)
+                eng = engineering_by_path.get(path.path_id)
                 assessment = self.maturity_mapper.run(
                     path=path,
                     industry_result=ind,
@@ -240,6 +284,8 @@ class Orchestrator:
                 reputation_report=reputation_report,
                 session_id=session_id,
             )
+            if request.title:
+                report.title = f"Technology Landscape: {request.title}"
             self.store.save_model(f"research/{session_id}/report.json", report)
 
             # Step 6: Write requested outputs
@@ -271,6 +317,48 @@ class Orchestrator:
             grouped[pid].setdefault(q.source, [])
             grouped[pid][q.source].append(q)
         return grouped
+
+    async def _run_path_research(
+        self,
+        path: Any,
+        queries_by_source: dict[str, list[SearchQuery]],
+        semaphore: asyncio.Semaphore,
+    ) -> tuple[str, Any | None, Any | None, Any | None]:
+        """Run industry, academic, and engineering subagents for one path."""
+        async with semaphore:
+            web_queries = queries_by_source.get("tavily", [])
+            code_queries = queries_by_source.get("github", [])
+            academic_queries = [
+                *queries_by_source.get("semantic_scholar", []),
+                *queries_by_source.get("arxiv", []),
+            ]
+            logger.info(
+                "Launching research subagents for %s: web=%d, code=%d, academic=%d",
+                path.path_id,
+                len(web_queries),
+                len(code_queries),
+                len(academic_queries),
+            )
+            results = await asyncio.gather(
+                self.industry_researcher.run(
+                    path=path,
+                    web_queries=web_queries,
+                    code_queries=code_queries,
+                ),
+                self.academic_researcher.run(path=path, queries=academic_queries),
+                self.engineering_analyst.run(path=path, code_queries=code_queries),
+                return_exceptions=True,
+            )
+
+        labels = ["industry", "academic", "engineering"]
+        normalized: list[Any | None] = []
+        for label, result in zip(labels, results, strict=False):
+            if isinstance(result, Exception):
+                logger.error("%s subagent failed for %s: %s", label, path.path_id, result)
+                normalized.append(None)
+            else:
+                normalized.append(result)
+        return path.path_id, normalized[0], normalized[1], normalized[2]
 
     def _write_outputs(self, report: ResearchReport, output_format: str) -> list[Path]:
         """Write report outputs in the requested format."""

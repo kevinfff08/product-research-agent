@@ -53,6 +53,9 @@ class DocxReporter:
         document.add_heading(title, level=0)
         self._add_metadata(report, document)
         self._add_section(document, "Executive Summary", report.executive_summary)
+        self._add_research_method(report, document)
+        self._add_decision_matrix(report, document)
+        self._add_key_claims(report, document)
         self._add_technology_landscape(report, document)
         self._add_maturity_map(report, document)
         self._add_workflows(report, document)
@@ -61,7 +64,11 @@ class DocxReporter:
         self._add_engineering_analysis(report, document)
         self._add_reputation(report, document)
         self._add_feasibility(report, document)
-        self._add_section(document, "Recommendations", report.recommendations)
+        self._add_confidence_and_gaps(report, document)
+        recommendations = report.recommended_strategy or report.recommendations
+        if report.recommended_strategy and report.recommendations:
+            recommendations = f"{report.recommended_strategy}\n\n{report.recommendations}"
+        self._add_section(document, "Recommendations", recommendations)
         self._add_sources(report, document)
 
     def _add_metadata(self, report: ResearchReport, document: Any) -> None:
@@ -84,6 +91,70 @@ class DocxReporter:
             return
         document.add_heading(heading, level=1)
         document.add_paragraph(text)
+
+    def _add_research_method(self, report: ResearchReport, document: Any) -> None:
+        if not report.research_questions and not report.methodology_summary:
+            return
+        document.add_heading("Research Question and Method", level=1)
+        for question in report.research_questions:
+            document.add_paragraph(question, style="List Bullet")
+        if report.methodology_summary:
+            document.add_paragraph(report.methodology_summary)
+
+    def _add_decision_matrix(self, report: ResearchReport, document: Any) -> None:
+        if not report.decision_matrix:
+            return
+        document.add_heading("Decision Matrix", level=1)
+        headers = [
+            "Option",
+            "User value",
+            "Feasibility",
+            "Maturity",
+            "Ecosystem",
+            "Cost/Risk",
+            "Evidence",
+            "Verdict",
+        ]
+        table = document.add_table(rows=1, cols=len(headers))
+        table.style = "Table Grid"
+        for i, header in enumerate(headers):
+            table.rows[0].cells[i].text = header
+        for row in report.decision_matrix:
+            values = [
+                row.option or row.path_id,
+                row.user_value,
+                row.technical_feasibility,
+                row.maturity,
+                row.ecosystem_strength,
+                row.cost_risk,
+                row.evidence_strength,
+                row.verdict,
+            ]
+            cells = table.add_row().cells
+            for i, value in enumerate(values):
+                cells[i].text = value
+
+    def _add_key_claims(self, report: ResearchReport, document: Any) -> None:
+        if not report.key_claims:
+            return
+        document.add_heading("Key Claims and Evidence", level=1)
+        for claim in report.key_claims:
+            document.add_heading(claim.claim, level=2)
+            if claim.confidence:
+                document.add_paragraph(f"Confidence: {claim.confidence}")
+            self._add_inline_list(
+                document,
+                "Supporting evidence",
+                claim.supporting_evidence,
+            )
+            self._add_inline_list(
+                document,
+                "Contradicting evidence or caveats",
+                claim.contradicting_evidence,
+            )
+            if claim.implication:
+                document.add_paragraph(f"Implication: {claim.implication}")
+            self._add_inline_list(document, "Sources", claim.source_urls)
 
     def _add_technology_landscape(self, report: ResearchReport, document: Any) -> None:
         if not report.technology_landscape:
@@ -275,6 +346,15 @@ class DocxReporter:
             if assessment.rationale:
                 document.add_paragraph(f"Rationale: {assessment.rationale}")
             self._add_inline_list(document, "Key challenges", assessment.key_challenges)
+
+    def _add_confidence_and_gaps(self, report: ResearchReport, document: Any) -> None:
+        if not report.confidence_assessment and not report.evidence_gaps and not report.assumptions:
+            return
+        document.add_heading("Confidence, Gaps, and Assumptions", level=1)
+        if report.confidence_assessment:
+            document.add_paragraph(report.confidence_assessment)
+        self._add_inline_list(document, "Evidence gaps", report.evidence_gaps)
+        self._add_inline_list(document, "Assumptions", report.assumptions)
 
     def _add_sources(self, report: ResearchReport, document: Any) -> None:
         if not report.all_sources:

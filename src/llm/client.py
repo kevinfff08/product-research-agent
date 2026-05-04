@@ -1,4 +1,4 @@
-"""Codex LLM client for OpenAI-compatible APIs and CLIProxyAPI."""
+"""LLM client for OpenAI-compatible providers and CLIProxyAPI."""
 
 from __future__ import annotations
 
@@ -16,9 +16,30 @@ load_dotenv()
 
 logger = get_logger("llm.client")
 
-_DEFAULT_MODEL = "gpt-5.4"
-_DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 _DEFAULT_PROXY_URL = "http://localhost:8317"
+_PROVIDER_DEFAULTS: dict[str, dict[str, str | bool]] = {
+    "openai": {
+        "model": "gpt-5.4",
+        "base_url": "https://api.openai.com/v1",
+        "api_key_env": "OPENAI_API_KEY",
+        "base_url_env": "OPENAI_BASE_URL",
+        "ensure_v1": True,
+    },
+    "deepseek": {
+        "model": "deepseek-v4-flash",
+        "base_url": "https://api.deepseek.com",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "base_url_env": "DEEPSEEK_BASE_URL",
+        "ensure_v1": False,
+    },
+    "google": {
+        "model": "gemini-2.5-flash",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "api_key_env": "GOOGLE_API_KEY",
+        "base_url_env": "GOOGLE_BASE_URL",
+        "ensure_v1": False,
+    },
+}
 _ROUTING_ERROR_MARKERS = (
     "unknown provider for model",
     "model_not_found",
@@ -28,11 +49,11 @@ _ROUTING_ERROR_MARKERS = (
 
 
 class LLMClient:
-    """OpenAI-compatible client constrained to Codex-capable models.
+    """OpenAI-compatible client for direct providers or CLIProxyAPI.
 
     Supports two modes:
     - ``setup-token``: route through CLIProxyAPI, defaulting to localhost:8317.
-    - ``api-key``: call an OpenAI-compatible endpoint with ``OPENAI_API_KEY``.
+    - ``api-key``: call provider APIs selected by ``LLM_PROVIDER``.
     """
 
     def __init__(
@@ -43,42 +64,59 @@ class LLMClient:
         base_url: str | None = None,
         timeout: float = 120.0,
     ) -> None:
-        self.model = model or os.environ.get("LLM_MODEL", _DEFAULT_MODEL)
+        self.provider = os.environ.get("LLM_PROVIDER", "openai").strip().lower()
+        if self.provider not in _PROVIDER_DEFAULTS:
+            supported = ", ".join(sorted(_PROVIDER_DEFAULTS))
+            raise ValueError(f"Unsupported LLM_PROVIDER '{self.provider}'. Use one of: {supported}")
+
+        provider_config = _PROVIDER_DEFAULTS[self.provider]
+        default_model = str(provider_config["model"])
+        self.model = model or os.environ.get("LLM_MODEL", default_model)
         self.max_tokens = max_tokens
         self.timeout = timeout
         self._client: httpx.Client | None = None
 
         self.mode = os.environ.get("LLM_MODE", "api-key").strip().lower()
+        if self.mode not in {"setup-token", "api-key"}:
+            raise ValueError("LLM_MODE must be one of: setup-token, api-key")
+
         if self.mode == "setup-token":
             proxy_url = base_url or os.environ.get("LLM_PROXY_URL", _DEFAULT_PROXY_URL)
-            self.base_url = self._normalize_base_url(proxy_url)
+            self.base_url = self._normalize_base_url(proxy_url, ensure_v1=True)
             self.api_key = api_key or os.environ.get("LLM_API_KEY", "setup-token")
             logger.info(
-                "LLMClient init: mode=setup-token, proxy=%s, model=%s",
+                "LLMClient init: mode=setup-token, provider=%s, proxy=%s, model=%s",
+                self.provider,
                 self.base_url,
                 self.model,
             )
         else:
+            base_url_env = str(provider_config["base_url_env"])
             openai_url = (
                 base_url
-                or os.environ.get("OPENAI_BASE_URL")
+                or os.environ.get(base_url_env)
                 or os.environ.get("LLM_BASE_URL")
-                or _DEFAULT_OPENAI_BASE_URL
+                or str(provider_config["base_url"])
             )
-            self.base_url = self._normalize_base_url(openai_url)
-            self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+            self.base_url = self._normalize_base_url(
+                openai_url,
+                ensure_v1=bool(provider_config["ensure_v1"]),
+            )
+            api_key_env = str(provider_config["api_key_env"])
+            self.api_key = api_key or os.environ.get(api_key_env) or os.environ.get("LLM_API_KEY", "")
             logger.info(
-                "LLMClient init: mode=api-key, has_key=%s, base_url=%s, model=%s",
+                "LLMClient init: mode=api-key, provider=%s, has_key=%s, base_url=%s, model=%s",
+                self.provider,
                 bool(self.api_key),
                 self.base_url,
                 self.model,
             )
 
     @staticmethod
-    def _normalize_base_url(base_url: str) -> str:
-        """Return a base URL ending in /v1 for OpenAI-compatible requests."""
+    def _normalize_base_url(base_url: str, *, ensure_v1: bool = True) -> str:
+        """Return a normalized OpenAI-compatible base URL."""
         normalized = base_url.rstrip("/")
-        if not normalized.endswith("/v1"):
+        if ensure_v1 and not normalized.endswith("/v1"):
             normalized = f"{normalized}/v1"
         return normalized
 
@@ -87,8 +125,8 @@ class LLMClient:
         if self._client is None:
             if not self.api_key:
                 raise RuntimeError(
-                    "OPENAI_API_KEY is required when LLM_MODE=api-key. "
-                    "Use LLM_MODE=setup-token for CLIProxyAPI."
+                    f"{_PROVIDER_DEFAULTS[self.provider]['api_key_env']} is required "
+                    "when LLM_MODE=api-key. Use LLM_MODE=setup-token for CLIProxyAPI."
                 )
             self._client = httpx.Client(
                 base_url=self.base_url,
@@ -105,6 +143,19 @@ class LLMClient:
         """Close the underlying HTTP client."""
         if self._client and not self._client.is_closed:
             self._client.close()
+
+    def list_models(self) -> list[str]:
+        """Return model IDs exposed by the configured OpenAI-compatible endpoint."""
+        response = self.client.get("/models")
+        if response.status_code >= 400:
+            raise RuntimeError(f"Failed to list models: HTTP {response.status_code}")
+        payload = response.json()
+        data = payload.get("data", []) if isinstance(payload, dict) else []
+        models: list[str] = []
+        for item in data:
+            if isinstance(item, dict) and item.get("id"):
+                models.append(str(item["id"]))
+        return models
 
     def generate(
         self,
@@ -174,13 +225,26 @@ class LLMClient:
 
         marker_text = f"{code} {message}".lower()
         if any(marker in marker_text for marker in _ROUTING_ERROR_MARKERS):
+            available = self._safe_list_models()
+            suffix = ""
+            if available:
+                suffix = f" Available models from {self.base_url}: {', '.join(available[:20])}"
             raise RuntimeError(
                 f"Non-retryable LLM model routing error for model '{self.model}': {message}"
+                f"{suffix}"
             )
 
         raise RuntimeError(
             f"LLM request failed with HTTP {response.status_code} after {elapsed:.1f}s: {message}"
         )
+
+    def _safe_list_models(self) -> list[str]:
+        """Best-effort model inventory for clearer setup-token routing errors."""
+        try:
+            return self.list_models()
+        except Exception as exc:
+            logger.debug("Could not list models from %s: %s", self.base_url, exc)
+            return []
 
     @staticmethod
     def _extract_message_text(data: dict[str, Any]) -> str:

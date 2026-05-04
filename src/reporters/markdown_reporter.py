@@ -30,6 +30,9 @@ class MarkdownReporter:
         sections = [
             self._header(report),
             self._executive_summary(report),
+            self._research_method(report),
+            self._decision_matrix(report),
+            self._key_claims(report),
             self._technology_landscape(report),
             self._maturity_map(report),
             self._implementation_workflows(report),
@@ -38,6 +41,7 @@ class MarkdownReporter:
             self._engineering_analysis(report),
             self._reputation_analysis(report),
             self._feasibility(report),
+            self._confidence_and_gaps(report),
             self._recommendations(report),
             self._sources(report),
         ]
@@ -57,6 +61,60 @@ class MarkdownReporter:
         if not report.executive_summary:
             return ""
         return f"## Executive Summary\n\n{report.executive_summary}"
+
+    def _research_method(self, report: ResearchReport) -> str:
+        if not report.research_questions and not report.methodology_summary:
+            return ""
+        lines = ["## Research Question and Method", ""]
+        if report.research_questions:
+            lines.append("**Research questions:**")
+            for question in report.research_questions:
+                lines.append(f"- {question}")
+            lines.append("")
+        if report.methodology_summary:
+            lines.append(report.methodology_summary)
+        return "\n".join(lines)
+
+    def _decision_matrix(self, report: ResearchReport) -> str:
+        if not report.decision_matrix:
+            return ""
+        lines = ["## Decision Matrix", ""]
+        lines.append(
+            "| Option | User Value | Feasibility | Maturity | Ecosystem | Cost/Risk | Evidence | Verdict |"
+        )
+        lines.append("|---|---|---|---|---|---|---|---|")
+        for row in report.decision_matrix:
+            option = row.option or row.path_id
+            lines.append(
+                f"| {option} | {row.user_value} | {row.technical_feasibility} | "
+                f"{row.maturity} | {row.ecosystem_strength} | {row.cost_risk} | "
+                f"{row.evidence_strength} | {row.verdict} |"
+            )
+        return "\n".join(lines)
+
+    def _key_claims(self, report: ResearchReport) -> str:
+        if not report.key_claims:
+            return ""
+        lines = ["## Key Claims and Evidence", ""]
+        for claim in report.key_claims:
+            lines.append(f"### {claim.claim}")
+            if claim.confidence:
+                lines.append(f"**Confidence:** {claim.confidence}")
+            if claim.supporting_evidence:
+                lines.append("\n**Supporting evidence:**")
+                for evidence in claim.supporting_evidence:
+                    lines.append(f"- {evidence}")
+            if claim.contradicting_evidence:
+                lines.append("\n**Contradicting evidence or caveats:**")
+                for evidence in claim.contradicting_evidence:
+                    lines.append(f"- {evidence}")
+            if claim.implication:
+                lines.append(f"\n**Implication:** {claim.implication}")
+            if claim.source_urls:
+                links = ", ".join(f"[source]({url})" for url in claim.source_urls)
+                lines.append(f"\n**Sources:** {links}")
+            lines.append("")
+        return "\n".join(lines)
 
     def _technology_landscape(self, report: ResearchReport) -> str:
         if not report.technology_landscape:
@@ -251,9 +309,30 @@ class MarkdownReporter:
         return "\n".join(lines)
 
     def _recommendations(self, report: ResearchReport) -> str:
-        if not report.recommendations:
+        if not report.recommendations and not report.recommended_strategy:
             return ""
-        return f"## Recommendations\n\n{report.recommendations}"
+        body = report.recommended_strategy or report.recommendations
+        if report.recommended_strategy and report.recommendations:
+            body = f"{report.recommended_strategy}\n\n{report.recommendations}"
+        return f"## Recommendations\n\n{body}"
+
+    def _confidence_and_gaps(self, report: ResearchReport) -> str:
+        if not report.confidence_assessment and not report.evidence_gaps and not report.assumptions:
+            return ""
+        lines = ["## Confidence, Gaps, and Assumptions", ""]
+        if report.confidence_assessment:
+            lines.append(report.confidence_assessment)
+            lines.append("")
+        if report.evidence_gaps:
+            lines.append("**Evidence gaps:**")
+            for gap in report.evidence_gaps:
+                lines.append(f"- {gap}")
+            lines.append("")
+        if report.assumptions:
+            lines.append("**Assumptions:**")
+            for assumption in report.assumptions:
+                lines.append(f"- {assumption}")
+        return "\n".join(lines)
 
     def _sources(self, report: ResearchReport) -> str:
         if not report.all_sources:

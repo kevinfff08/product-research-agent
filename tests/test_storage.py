@@ -26,6 +26,19 @@ class TestLocalStore:
         assert meta["status"] == "started"
         assert meta["description"] == "Test research"
 
+    def test_create_session_with_date_title_name(self, temp_store):
+        session_id = temp_store.create_session(
+            "Detailed context",
+            title="AI Code Review",
+            detailed_description="Long description",
+            session_id="20260504_120000_AI_Code_Review",
+        )
+
+        assert session_id == "20260504_120000_AI_Code_Review"
+        meta = temp_store.load_json(f"research/{session_id}/meta.json")
+        assert meta["title"] == "AI Code Review"
+        assert meta["detailed_description"] == "Long description"
+
     def test_save_and_load_json(self, temp_store):
         data = {"key": "value", "number": 42}
         temp_store.save_json("test/data.json", data)

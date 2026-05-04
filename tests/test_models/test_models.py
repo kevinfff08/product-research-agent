@@ -13,7 +13,13 @@ from src.models.academic import PaperAnalysis, AcademicResearchResult
 from src.models.engineering import CodeAnalysis, DeploymentAssessment, EngineeringAnalysis
 from src.models.maturity import TechnologyMaturity, MaturityAssessment
 from src.models.reputation import ReputationScore, VenuePrestige, ReputationReport
-from src.models.report import TechnologyEntry, FeasibilityAssessment, ResearchReport
+from src.models.report import (
+    TechnologyEntry,
+    FeasibilityAssessment,
+    ResearchReport,
+    DecisionMatrixRow,
+    EvidenceClaim,
+)
 
 
 class TestCommonModels:
@@ -53,13 +59,25 @@ class TestCommonModels:
 class TestInputModels:
     def test_research_request_defaults(self):
         req = ResearchRequest(raw_input="AI code review tool")
+        assert req.title == "AI code review tool"
+        assert req.raw_input == "AI code review tool"
         assert req.depth == "comprehensive"
         assert req.output_format == "markdown"
         assert req.max_paths == 5
 
+    def test_research_request_title_and_description(self):
+        req = ResearchRequest(
+            title="AI code review",
+            detailed_description="Review pull requests with AST and LLM analysis.",
+        )
+        assert req.title == "AI code review"
+        assert "Title: AI code review" in req.raw_input
+        assert "Detailed description:" in req.raw_input
+
     def test_research_request_custom(self):
         req = ResearchRequest(
-            raw_input="real-time video translation",
+            title="real-time video translation",
+            detailed_description="Translate meetings with low latency.",
             focus_areas=["latency", "accuracy"],
             depth="DEEP",
             output_format="BOTH",
@@ -242,6 +260,24 @@ class TestReportModels:
         assert report.title == ""
         assert len(report.technology_landscape) == 0
         assert len(report.all_sources) == 0
+        assert len(report.decision_matrix) == 0
+        assert len(report.key_claims) == 0
+
+    def test_decision_fields(self):
+        report = ResearchReport(
+            decision_matrix=[
+                DecisionMatrixRow(option="Build", verdict="recommended"),
+            ],
+            key_claims=[
+                EvidenceClaim(
+                    claim="Claim",
+                    supporting_evidence=["Evidence"],
+                    confidence="medium",
+                ),
+            ],
+        )
+        assert report.decision_matrix[0].verdict == "recommended"
+        assert report.key_claims[0].supporting_evidence == ["Evidence"]
 
     def test_research_report_serialization(self):
         report = ResearchReport(

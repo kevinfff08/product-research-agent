@@ -26,8 +26,12 @@ fi
 
 LLM_MODE="${LLM_MODE:-setup-token}"
 LLM_PROXY_URL="${LLM_PROXY_URL:-http://localhost:8317}"
+ARGS=("$@")
+if [ "$#" -eq 0 ]; then
+    ARGS=("start")
+fi
 
-if [ "${1:-}" = "research" ] && [ "$LLM_MODE" = "setup-token" ]; then
+if { [ "${ARGS[0]}" = "research" ] || [ "${ARGS[0]}" = "start" ]; } && [ "$LLM_MODE" = "setup-token" ]; then
     proxy_models_url="${LLM_PROXY_URL%/}/v1/models"
     if ! curl -fsS --max-time 2 "$proxy_models_url" >/dev/null 2>&1; then
         echo "[INFO] Starting CLIProxyAPI at $LLM_PROXY_URL"
@@ -51,11 +55,11 @@ echo "[INFO] Running Product Research Agent"
 echo ""
 
 if [ "${CONDA_DEFAULT_ENV:-}" = "research_tools" ]; then
-    python -m src "$@"
+    python -m src "${ARGS[@]}"
 else
     if ! command -v conda >/dev/null 2>&1; then
-        echo "[ERROR] conda not found. Activate research_tools and run: python -m src $*"
+        echo "[ERROR] conda not found. Activate research_tools and run: python -m src ${ARGS[*]}"
         exit 1
     fi
-    conda run -n research_tools python -m src "$@"
+    conda run -n research_tools python -m src "${ARGS[@]}"
 fi
