@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from src.agents.base import BaseAgent
+from src.llm.client import LLMClient
+from src.storage.local_store import LocalStore
 from src.apis.github_client import GitHubClient
 from src.models.plan import ResearchPath, SearchQuery
 from src.models.engineering import CodeAnalysis, DeploymentAssessment, EngineeringAnalysis
@@ -16,7 +18,7 @@ class EngineeringAnalyst(BaseAgent):
 
     agent_name = "engineering_analyst"
 
-    def __init__(self, llm, store, github: GitHubClient):
+    def __init__(self, llm: LLMClient, store: LocalStore, github: GitHubClient):
         super().__init__(llm, store)
         self.github = github
 

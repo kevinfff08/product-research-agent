@@ -6,6 +6,8 @@ import asyncio
 from datetime import datetime, timezone
 
 from src.agents.base import BaseAgent
+from src.llm.client import LLMClient
+from src.storage.local_store import LocalStore
 from src.apis.semantic_scholar import SemanticScholarClient
 from src.apis.arxiv_client import ArxivClient
 from src.models.plan import ResearchPath, SearchQuery
@@ -18,7 +20,7 @@ class AcademicResearcher(BaseAgent):
 
     agent_name = "academic_researcher"
 
-    def __init__(self, llm, store, semantic_scholar: SemanticScholarClient, arxiv: ArxivClient):
+    def __init__(self, llm: LLMClient, store: LocalStore, semantic_scholar: SemanticScholarClient, arxiv: ArxivClient):
         super().__init__(llm, store)
         self.s2 = semantic_scholar
         self.arxiv = arxiv

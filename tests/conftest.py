@@ -47,7 +47,7 @@ def sample_research_path():
         path_id="p1",
         title="Static Analysis + LLM Code Review",
         description="Combine AST parsing with LLM-based code understanding",
-        technologies_needed=["Python AST", "tree-sitter", "Claude API", "Git hooks"],
+        technologies_needed=["Python AST", "tree-sitter", "Codex API", "Git hooks"],
         key_questions=[
             "How to parse multiple programming languages?",
             "What is the latency for real-time code review?",
@@ -83,5 +83,5 @@ def sample_decomposition(sample_research_path):
                 priority=0.6,
             ),
         ],
-        shared_technologies=["Python", "Git integration", "Claude API"],
+        shared_technologies=["Python", "Git integration", "Codex API"],
     )

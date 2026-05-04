@@ -28,7 +28,7 @@ def orchestrator(tmp_path, mock_config):
     """Create an Orchestrator with mocked LLM and API clients."""
     with patch.dict("os.environ", {
         "LLM_MODE": "api-key",
-        "ANTHROPIC_API_KEY": "sk-test",
+        "OPENAI_API_KEY": "sk-test",
         "TAVILY_API_KEY": "test",
     }):
         orch = Orchestrator(
@@ -178,3 +178,21 @@ def test_group_queries(orchestrator):
     assert "p2" in grouped
     assert len(grouped["p1"]["tavily"]) == 1
     assert len(grouped["p1"]["github"]) == 1
+
+
+def test_write_outputs_both(orchestrator):
+    """Output writer should honor the requested combined format."""
+    pytest.importorskip("docx")
+    from src.models.report import ResearchReport
+
+    report = ResearchReport(
+        title="Combined Output",
+        session_id="session-123",
+        executive_summary="Summary",
+    )
+
+    paths = orchestrator._write_outputs(report, "both")
+
+    assert {path.suffix for path in paths} == {".md", ".docx"}
+    assert all(path.exists() for path in paths)
+    assert orchestrator.output_paths == paths

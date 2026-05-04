@@ -46,7 +46,7 @@ def research(
         "output", "--output-dir", "-o",
         help="Output directory for reports",
     ),
-):
+) -> None:
     """Run a full technology landscape research for a product idea."""
     console.print(Panel(
         f"[bold]Researching:[/bold] {idea}",
@@ -81,14 +81,16 @@ def research(
         border_style="green",
     ))
 
-    output_path = Path(output_dir) / f"{report.session_id}.md"
-    console.print(f"\nReport saved to: [bold]{output_path}[/bold]")
+    output_paths = orchestrator.output_paths or [Path(output_dir) / f"{report.session_id}.md"]
+    console.print("\nReports saved to:")
+    for output_path in output_paths:
+        console.print(f"  [bold]{output_path}[/bold]")
 
 
 @app.command()
 def list_sessions(
     data_dir: str = typer.Option("data", "--data-dir", help="Data directory"),
-):
+) -> None:
     """List all research sessions."""
     from src.storage.local_store import LocalStore
     store = LocalStore(data_dir)
@@ -119,7 +121,7 @@ def list_sessions(
 def show(
     session_id: str = typer.Argument(help="Session ID to display"),
     data_dir: str = typer.Option("data", "--data-dir", help="Data directory"),
-):
+) -> None:
     """Show details of a specific research session."""
     from src.storage.local_store import LocalStore
     store = LocalStore(data_dir)
@@ -156,7 +158,7 @@ def show(
 def status(
     session_id: str = typer.Argument(help="Session ID to check"),
     data_dir: str = typer.Option("data", "--data-dir", help="Data directory"),
-):
+) -> None:
     """Check the status of a research session."""
     from src.storage.local_store import LocalStore
     store = LocalStore(data_dir)

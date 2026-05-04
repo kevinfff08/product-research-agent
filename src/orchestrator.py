@@ -14,6 +14,7 @@ from src.llm.client import LLMClient
 from src.storage.local_store import LocalStore
 from src.models.input import ResearchRequest
 from src.models.common import ResearchWeight
+from src.models.plan import ResearchPlan, SearchQuery
 from src.models.report import ResearchReport
 
 # API clients
@@ -34,6 +35,7 @@ from src.agents.maturity_mapper import MaturityMapper
 from src.agents.report_generator import ReportGenerator
 
 # Reporter
+from src.reporters.docx_reporter import DocxReporter
 from src.reporters.markdown_reporter import MarkdownReporter
 
 load_dotenv()
@@ -91,6 +93,8 @@ class Orchestrator:
         self.maturity_mapper = MaturityMapper(self.llm, self.store)
         self.report_generator = ReportGenerator(self.llm, self.store)
         self.markdown_reporter = MarkdownReporter()
+        self.docx_reporter = DocxReporter()
+        self.output_paths: list[Path] = []
 
     def _load_config(self, path: str | Path) -> dict:
         """Load YAML configuration."""
@@ -117,7 +121,7 @@ class Orchestrator:
                      session_id, request.raw_input[:80])
 
         try:
-            # ── Step 1: Decompose ──
+            # Step 1: Decompose
             self.store.update_session_status(session_id, "decomposing")
             decomposition = self.decomposer.run(
                 raw_input=request.raw_input,
@@ -138,7 +142,7 @@ class Orchestrator:
                     executive_summary="Failed to decompose the research idea into viable paths.",
                 )
 
-            # ── Step 2: Plan ──
+            # Step 2: Plan
             self.store.update_session_status(session_id, "planning")
             weights = ResearchWeight(
                 industry=request.weights.industry if request.weights else 0.60,
@@ -151,7 +155,7 @@ class Orchestrator:
             # Group queries by path and source
             path_queries = self._group_queries(plan)
 
-            # ── Step 3: Parallel research ──
+            # Step 3: Parallel research
             self.store.update_session_status(session_id, "researching")
             industry_results = []
             academic_results = []
@@ -202,7 +206,7 @@ class Orchestrator:
             for i, er in enumerate(engineering_results):
                 self.store.save_model(f"research/{session_id}/engineering_{i}.json", er)
 
-            # ── Step 4: Reputation + Maturity ──
+            # Step 4: Reputation + Maturity
             self.store.update_session_status(session_id, "scoring")
             reputation_report = self.reputation_scorer.run(
                 industry_results=industry_results,
@@ -225,7 +229,7 @@ class Orchestrator:
             for i, ma in enumerate(maturity_assessments):
                 self.store.save_model(f"research/{session_id}/maturity_{i}.json", ma)
 
-            # ── Step 5: Generate report ──
+            # Step 5: Generate report
             self.store.update_session_status(session_id, "generating_report")
             report = self.report_generator.run(
                 decomposition=decomposition,
@@ -238,12 +242,14 @@ class Orchestrator:
             )
             self.store.save_model(f"research/{session_id}/report.json", report)
 
-            # ── Step 6: Write output ──
-            output_path = self.output_dir / f"{session_id}.md"
-            self.markdown_reporter.generate(report, output_path)
+            # Step 6: Write requested outputs
+            output_paths = self._write_outputs(report, request.output_format)
 
             self.store.update_session_status(session_id, "completed")
-            logger.info("Research pipeline complete: %s", output_path)
+            logger.info(
+                "Research pipeline complete: %s",
+                ", ".join(str(p) for p in output_paths),
+            )
 
             return report
 
@@ -256,7 +262,7 @@ class Orchestrator:
             # Clean up API clients
             await self._cleanup()
 
-    def _group_queries(self, plan) -> dict:
+    def _group_queries(self, plan: ResearchPlan) -> dict[str, dict[str, list[SearchQuery]]]:
         """Group search queries by path_id and source."""
         grouped: dict = {}
         for q in plan.search_queries:
@@ -266,10 +272,34 @@ class Orchestrator:
             grouped[pid][q.source].append(q)
         return grouped
 
-    async def _cleanup(self):
+    def _write_outputs(self, report: ResearchReport, output_format: str) -> list[Path]:
+        """Write report outputs in the requested format."""
+        normalized = output_format.strip().lower()
+        if normalized not in {"markdown", "docx", "both"}:
+            raise ValueError(
+                "Unsupported output format. Expected one of: markdown, docx, both"
+            )
+
+        paths: list[Path] = []
+        if normalized in {"markdown", "both"}:
+            markdown_path = self.output_dir / f"{report.session_id}.md"
+            paths.append(self.markdown_reporter.generate(report, markdown_path))
+
+        if normalized in {"docx", "both"}:
+            docx_path = self.output_dir / f"{report.session_id}.docx"
+            paths.append(self.docx_reporter.generate(report, docx_path))
+
+        self.output_paths = paths
+        return paths
+
+    async def _cleanup(self) -> None:
         """Close API clients."""
         for client in [self.tavily, self.s2, self.github, self.arxiv, self.scraper]:
             try:
                 await client.close()
             except Exception:
                 pass
+        try:
+            self.llm.close()
+        except Exception:
+            pass

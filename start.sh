@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "============================================"
-echo "  Product Research Agent - Startup"
-echo "============================================"
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
 
-# Colors
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-NC='\033[0m'
+echo "============================================"
+echo "  Product Research Agent"
+echo "============================================"
 
 PIDS=()
 cleanup() {
@@ -18,33 +16,46 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- Load .env if present ---
 if [ -f ".env" ]; then
     set -a
+    # shellcheck disable=SC1091
     source .env
     set +a
-    echo -e "${GREEN}[OK]${NC} Loaded .env"
+    echo "[OK] Loaded .env"
 fi
 
-# --- Start CLIProxyAPI if setup-token mode ---
-if [ "${LLM_MODE:-api-key}" = "setup-token" ]; then
-    echo ""
-    echo "[1/2] Starting CLIProxyAPI proxy on localhost:8317 ..."
-    if ! command -v cliproxyapi &>/dev/null; then
-        echo -e "${RED}[ERROR]${NC} cliproxyapi not found. Install it first:"
-        echo "        brew install router-for-me/tap/cliproxyapi  (macOS)"
-        echo "        curl -fsSL https://raw.githubusercontent.com/router-for-me/CLIProxyAPI/main/install.sh | bash  (Linux)"
+LLM_MODE="${LLM_MODE:-setup-token}"
+LLM_PROXY_URL="${LLM_PROXY_URL:-http://localhost:8317}"
+
+if [ "${1:-}" = "research" ] && [ "$LLM_MODE" = "setup-token" ]; then
+    proxy_models_url="${LLM_PROXY_URL%/}/v1/models"
+    if ! curl -fsS --max-time 2 "$proxy_models_url" >/dev/null 2>&1; then
+        echo "[INFO] Starting CLIProxyAPI at $LLM_PROXY_URL"
+        if [ -n "${CLIPROXYAPI_CMD:-}" ]; then
+            $CLIPROXYAPI_CMD &
+        elif command -v cliproxyapi >/dev/null 2>&1; then
+            cliproxyapi &
+        else
+            echo "[ERROR] cliproxyapi not found. Install it or set CLIPROXYAPI_CMD in .env."
+            exit 1
+        fi
+        PIDS+=("$!")
+        sleep 2
+    else
+        echo "[OK] CLIProxyAPI is already reachable"
+    fi
+fi
+
+echo ""
+echo "[INFO] Running Product Research Agent"
+echo ""
+
+if [ "${CONDA_DEFAULT_ENV:-}" = "research_tools" ]; then
+    python -m src "$@"
+else
+    if ! command -v conda >/dev/null 2>&1; then
+        echo "[ERROR] conda not found. Activate research_tools and run: python -m src $*"
         exit 1
     fi
-    cliproxyapi &
-    PIDS+=($!)
-    sleep 2
-    echo -e "${GREEN}[OK]${NC} CLIProxyAPI proxy started (PID: ${PIDS[-1]})"
+    conda run -n research_tools python -m src "$@"
 fi
-
-# --- Run the research agent ---
-echo ""
-echo "[2/2] Starting Product Research Agent ..."
-echo ""
-
-conda run -n research_tools python -m src "$@"

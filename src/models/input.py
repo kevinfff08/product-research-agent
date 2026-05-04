@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.models.common import ResearchWeight
 
@@ -33,3 +33,21 @@ class ResearchRequest(BaseModel):
         default=None,
         description="Research type weights (industry/academic/community)",
     )
+
+    @field_validator("depth")
+    @classmethod
+    def validate_depth(cls, value: str) -> str:
+        """Validate supported research depths."""
+        normalized = value.strip().lower()
+        if normalized not in {"quick", "comprehensive", "deep"}:
+            raise ValueError("depth must be one of: quick, comprehensive, deep")
+        return normalized
+
+    @field_validator("output_format")
+    @classmethod
+    def validate_output_format(cls, value: str) -> str:
+        """Validate supported report output formats."""
+        normalized = value.strip().lower()
+        if normalized not in {"markdown", "docx", "both"}:
+            raise ValueError("output_format must be one of: markdown, docx, both")
+        return normalized

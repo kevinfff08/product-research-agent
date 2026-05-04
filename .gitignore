@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
+*.pyc.*
 *$py.class
 *.so
 *.egg-info/
@@ -31,16 +32,20 @@ desktop.ini
 
 # Test
 .pytest_cache/
+.tmp/
+.hypothesis/
 htmlcov/
 .coverage
 coverage.xml
+.ruff_cache/
+.mypy_cache/
 
-# Claude
+# Local assistant/runtime state
 .claude/
-CLAUDE.md
 
 # Trae
 .trae/
 
-# Docs
-product_research_agent_report.docx
+# Document
+docs/
+AGENTS.md

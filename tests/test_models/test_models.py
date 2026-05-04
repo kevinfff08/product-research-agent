@@ -61,11 +61,13 @@ class TestInputModels:
         req = ResearchRequest(
             raw_input="real-time video translation",
             focus_areas=["latency", "accuracy"],
-            depth="deep",
-            output_format="both",
+            depth="DEEP",
+            output_format="BOTH",
             max_paths=3,
         )
         assert len(req.focus_areas) == 2
+        assert req.depth == "deep"
+        assert req.output_format == "both"
         assert req.max_paths == 3
 
     def test_research_request_max_paths_validation(self):
@@ -73,6 +75,12 @@ class TestInputModels:
             ResearchRequest(raw_input="test", max_paths=0)
         with pytest.raises(ValidationError):
             ResearchRequest(raw_input="test", max_paths=11)
+
+    def test_research_request_choice_validation(self):
+        with pytest.raises(ValidationError):
+            ResearchRequest(raw_input="test", depth="medium")
+        with pytest.raises(ValidationError):
+            ResearchRequest(raw_input="test", output_format="pdf")
 
 
 class TestPlanModels:

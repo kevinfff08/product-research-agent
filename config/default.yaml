@@ -1,9 +1,9 @@
 research:
-  max_paths: 5                       # Max decomposition paths
-  max_search_results_per_query: 10   # Results per search query
-  max_papers_per_path: 15            # Max papers to analyze per path
-  max_repos_per_path: 10             # Max repos to analyze per path
-  max_blog_sources: 10               # Max blog/article sources per path
+  max_paths: 5                       # 最大研究路径数
+  max_search_results_per_query: 10   # 每个查询的最大搜索结果数
+  max_papers_per_path: 15            # 每条路径最多分析论文数
+  max_repos_per_path: 10             # 每条路径最多分析仓库数
+  max_blog_sources: 10               # 每条路径最多分析文章/博客数
 
 weights:
   industry: 0.60
@@ -12,30 +12,26 @@ weights:
 
 api:
   tavily:
-    search_depth: "advanced"         # "basic" or "advanced"
+    search_depth: "advanced"         # basic 或 advanced
     max_results: 10
   semantic_scholar:
-    rate_limit_rps: 1.0              # Without API key
-    rate_limit_rps_keyed: 10.0       # With API key
+    rate_limit_rps: 1.0              # 未配置 API key
+    rate_limit_rps_keyed: 10.0       # 已配置 API key
   github:
-    rate_limit_rps: 0.5              # Without token
-    rate_limit_rps_keyed: 5.0        # With token
+    rate_limit_rps: 0.5              # 未配置 token
+    rate_limit_rps_keyed: 5.0        # 已配置 token
   arxiv:
-    rate_limit_rps: 0.3              # arXiv is sensitive to rate
+    rate_limit_rps: 0.3              # arXiv 对请求频率敏感
     max_results: 20
   web_scraper:
     timeout: 30
-    max_content_length: 50000        # chars
+    max_content_length: 50000        # 字符数
 
 llm:
   default_max_tokens: 8192
-  decompose_temperature: 0.5        # More creative for brainstorming
-  analysis_temperature: 0.2         # More precise for analysis
-  synthesis_temperature: 0.3        # Balanced for report writing
-
-output:
-  default_format: "markdown"         # "markdown", "docx", or "both"
-  output_dir: "output"
+  decompose_temperature: 0.5         # 想法拆解更开放
+  analysis_temperature: 0.2          # 分析阶段更稳定
+  synthesis_temperature: 0.3         # 报告合成折中
 
 cache:
-  ttl_hours: 24                      # API response cache TTL
+  ttl_hours: 24                      # API 响应缓存有效期

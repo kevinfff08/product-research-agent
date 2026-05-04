@@ -7,6 +7,8 @@ import json
 from datetime import datetime, timezone
 
 from src.agents.base import BaseAgent
+from src.llm.client import LLMClient
+from src.storage.local_store import LocalStore
 from src.apis.tavily_client import TavilyClient
 from src.apis.github_client import GitHubClient
 from src.apis.web_scraper import WebScraper
@@ -22,7 +24,7 @@ class IndustryResearcher(BaseAgent):
 
     agent_name = "industry_researcher"
 
-    def __init__(self, llm, store, tavily: TavilyClient, github: GitHubClient, scraper: WebScraper):
+    def __init__(self, llm: LLMClient, store: LocalStore, tavily: TavilyClient, github: GitHubClient, scraper: WebScraper):
         super().__init__(llm, store)
         self.tavily = tavily
         self.github = github
