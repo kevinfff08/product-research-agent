@@ -25,6 +25,14 @@ if "%LLM_MODE%"=="" set "LLM_MODE=setup-token"
 if "%LLM_PROXY_URL%"=="" set "LLM_PROXY_URL=http://localhost:8317"
 if "%CLIPROXYAPI_EXE%"=="" set "CLIPROXYAPI_EXE=C:\cliproxyapi\cli-proxy-api.exe"
 if "%CLIPROXYAPI_CONFIG%"=="" set "CLIPROXYAPI_CONFIG=C:\cliproxyapi\config.yaml"
+set "CONDA_ENV_NAME=research_tools"
+set "ENV_PYTHON="
+if not "%RESEARCH_TOOLS_PYTHON%"=="" if exist "%RESEARCH_TOOLS_PYTHON%" set "ENV_PYTHON=%RESEARCH_TOOLS_PYTHON%"
+if "%ENV_PYTHON%"=="" if not "%CONDA_PREFIX%"=="" if exist "%CONDA_PREFIX%\envs\%CONDA_ENV_NAME%\python.exe" set "ENV_PYTHON=%CONDA_PREFIX%\envs\%CONDA_ENV_NAME%\python.exe"
+if "%ENV_PYTHON%"=="" if not "%CONDA_EXE%"=="" for %%I in ("%CONDA_EXE%") do if exist "%%~dpI..\envs\%CONDA_ENV_NAME%\python.exe" set "ENV_PYTHON=%%~dpI..\envs\%CONDA_ENV_NAME%\python.exe"
+if "%ENV_PYTHON%"=="" if exist "%USERPROFILE%\anaconda3\envs\%CONDA_ENV_NAME%\python.exe" set "ENV_PYTHON=%USERPROFILE%\anaconda3\envs\%CONDA_ENV_NAME%\python.exe"
+if "%ENV_PYTHON%"=="" if exist "%USERPROFILE%\miniconda3\envs\%CONDA_ENV_NAME%\python.exe" set "ENV_PYTHON=%USERPROFILE%\miniconda3\envs\%CONDA_ENV_NAME%\python.exe"
+if "%ENV_PYTHON%"=="" if exist "%ProgramData%\anaconda3\envs\%CONDA_ENV_NAME%\python.exe" set "ENV_PYTHON=%ProgramData%\anaconda3\envs\%CONDA_ENV_NAME%\python.exe"
 set "NEEDS_LLM=0"
 set "CLI_ARGS=%*"
 if "%~1"=="" set "CLI_ARGS=start"
@@ -57,15 +65,28 @@ echo.
 echo [INFO] Running Product Research Agent
 echo.
 
-if /I "%CONDA_DEFAULT_ENV%"=="research_tools" (
+if /I "%CONDA_DEFAULT_ENV%"=="%CONDA_ENV_NAME%" (
+    echo [INFO] Python environment: %CONDA_DEFAULT_ENV%
     python -m src %CLI_ARGS%
+) else if not "%ENV_PYTHON%"=="" (
+    echo [INFO] Python environment: %CONDA_ENV_NAME%
+    echo [INFO] Python executable: %ENV_PYTHON%
+    "%ENV_PYTHON%" -m src %CLI_ARGS%
 ) else (
     where conda >nul 2>nul
     if errorlevel 1 (
-        echo [ERROR] conda not found. Activate research_tools and run: python -m src %CLI_ARGS%
+        echo [ERROR] conda not found. Activate %CONDA_ENV_NAME% and run: python -m src %CLI_ARGS%
         exit /b 1
     )
-    conda run -n research_tools python -m src %CLI_ARGS%
+    call conda activate %CONDA_ENV_NAME%
+    if errorlevel 1 (
+        echo [ERROR] Failed to activate conda environment: %CONDA_ENV_NAME%
+        exit /b 1
+    )
+    echo [INFO] Python environment: !CONDA_DEFAULT_ENV!
+    python -m src %CLI_ARGS%
 )
 
+set "EXIT_CODE=%ERRORLEVEL%"
 endlocal
+exit /b %EXIT_CODE%

@@ -26,6 +26,19 @@ fi
 
 LLM_MODE="${LLM_MODE:-setup-token}"
 LLM_PROXY_URL="${LLM_PROXY_URL:-http://localhost:8317}"
+CONDA_ENV_NAME="research_tools"
+ENV_PYTHON=""
+if [ -n "${RESEARCH_TOOLS_PYTHON:-}" ] && [ -x "${RESEARCH_TOOLS_PYTHON}" ]; then
+    ENV_PYTHON="${RESEARCH_TOOLS_PYTHON}"
+elif [ -n "${CONDA_PREFIX:-}" ] && [ -x "${CONDA_PREFIX}/envs/${CONDA_ENV_NAME}/bin/python" ]; then
+    ENV_PYTHON="${CONDA_PREFIX}/envs/${CONDA_ENV_NAME}/bin/python"
+elif [ -n "${CONDA_EXE:-}" ] && [ -x "$(dirname "$(dirname "${CONDA_EXE}")")/envs/${CONDA_ENV_NAME}/bin/python" ]; then
+    ENV_PYTHON="$(dirname "$(dirname "${CONDA_EXE}")")/envs/${CONDA_ENV_NAME}/bin/python"
+elif [ -x "${HOME}/anaconda3/envs/${CONDA_ENV_NAME}/bin/python" ]; then
+    ENV_PYTHON="${HOME}/anaconda3/envs/${CONDA_ENV_NAME}/bin/python"
+elif [ -x "${HOME}/miniconda3/envs/${CONDA_ENV_NAME}/bin/python" ]; then
+    ENV_PYTHON="${HOME}/miniconda3/envs/${CONDA_ENV_NAME}/bin/python"
+fi
 ARGS=("$@")
 if [ "$#" -eq 0 ]; then
     ARGS=("start")
@@ -54,12 +67,22 @@ echo ""
 echo "[INFO] Running Product Research Agent"
 echo ""
 
-if [ "${CONDA_DEFAULT_ENV:-}" = "research_tools" ]; then
+if [ "${CONDA_DEFAULT_ENV:-}" = "${CONDA_ENV_NAME}" ]; then
+    echo "[INFO] Python environment: ${CONDA_DEFAULT_ENV}"
     python -m src "${ARGS[@]}"
+elif [ -n "${ENV_PYTHON}" ]; then
+    echo "[INFO] Python environment: ${CONDA_ENV_NAME}"
+    echo "[INFO] Python executable: ${ENV_PYTHON}"
+    "${ENV_PYTHON}" -m src "${ARGS[@]}"
 else
     if ! command -v conda >/dev/null 2>&1; then
-        echo "[ERROR] conda not found. Activate research_tools and run: python -m src ${ARGS[*]}"
+        echo "[ERROR] conda not found. Activate ${CONDA_ENV_NAME} and run: python -m src ${ARGS[*]}"
         exit 1
     fi
-    conda run -n research_tools python -m src "${ARGS[@]}"
+    CONDA_BASE="$(conda info --base)"
+    # shellcheck disable=SC1091
+    source "${CONDA_BASE}/etc/profile.d/conda.sh"
+    conda activate "${CONDA_ENV_NAME}"
+    echo "[INFO] Python environment: ${CONDA_DEFAULT_ENV}"
+    python -m src "${ARGS[@]}"
 fi
