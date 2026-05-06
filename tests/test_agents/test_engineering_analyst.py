@@ -8,48 +8,33 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.agents.engineering_analyst import EngineeringAnalyst
-from src.apis.github_client import GitHubClient
+from src.apis.tavily_client import TavilyClient
 
 
 @pytest.fixture
-def mock_github():
-    client = AsyncMock(spec=GitHubClient)
-    client.search_repos.return_value = [
-        {
-            "full_name": "org/codereviewer",
-            "html_url": "https://github.com/org/codereviewer",
-            "stargazers_count": 2000,
-            "forks_count": 300,
-            "language": "Python",
-            "description": "AI-powered code review tool",
-            "license": {"spdx_id": "Apache-2.0"},
-            "topics": ["code-review", "ai"],
-            "updated_at": "2025-06-01",
-        }
-    ]
-    client.get_readme.return_value = "# CodeReviewer\nAn AI tool."
+def mock_tavily():
+    client = AsyncMock(spec=TavilyClient)
+    client.search.return_value = {
+        "results": [
+            {
+                "title": "org/codereviewer GitHub repository",
+                "url": "https://github.com/org/codereviewer",
+                "content": "AI-powered code review tool in Python FastAPI Docker.",
+                "score": 0.9,
+            }
+        ]
+    }
     return client
 
 
 @pytest.fixture
-def analyst(mock_llm, temp_store, mock_github):
-    return EngineeringAnalyst(mock_llm, temp_store, mock_github)
+def analyst(mock_llm, temp_store, mock_tavily):
+    return EngineeringAnalyst(mock_llm, temp_store, mock_tavily)
 
 
 @pytest.mark.asyncio
 async def test_run_success(analyst, mock_llm, sample_research_path):
     mock_llm.generate_json.side_effect = [
-        # First call: analyze_repo template
-        json.dumps({
-            "architecture_summary": "Microservice architecture",
-            "tech_stack": ["Python", "FastAPI", "Redis"],
-            "code_quality_notes": "Well structured",
-            "deployment_readiness": "Production ready",
-            "community_health": "Active maintenance",
-            "strengths": ["Good docs", "Fast"],
-            "weaknesses": ["Limited language support"],
-        }),
-        # Second call: deployment assessment
         json.dumps({
             "deployment_complexity": "moderate",
             "infrastructure_requirements": ["Docker", "Redis"],
@@ -67,11 +52,12 @@ async def test_run_success(analyst, mock_llm, sample_research_path):
     assert len(result.code_analyses) == 1
     assert result.deployment_assessment.deployment_complexity == "moderate"
     assert len(result.sources) == 1
+    assert "Python" in result.code_analyses[0].tech_stack
 
 
 @pytest.mark.asyncio
-async def test_run_no_repos(analyst, mock_llm, mock_github, sample_research_path):
-    mock_github.search_repos.return_value = []
+async def test_run_no_repos(analyst, mock_llm, mock_tavily, sample_research_path):
+    mock_tavily.search.return_value = {"results": []}
 
     result = await analyst.run(path=sample_research_path)
 
@@ -80,8 +66,8 @@ async def test_run_no_repos(analyst, mock_llm, mock_github, sample_research_path
 
 
 @pytest.mark.asyncio
-async def test_github_search_failure(analyst, mock_llm, mock_github, sample_research_path):
-    mock_github.search_repos.side_effect = Exception("GitHub down")
+async def test_code_search_failure(analyst, mock_llm, mock_tavily, sample_research_path):
+    mock_tavily.search.side_effect = Exception("Search down")
 
     result = await analyst.run(path=sample_research_path)
 

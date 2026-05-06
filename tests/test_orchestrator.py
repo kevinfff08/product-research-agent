@@ -60,15 +60,6 @@ def orchestrator(tmp_path, mock_config):
     orch.tavily.search.return_value = {"results": []}
     orch.tavily.close = AsyncMock()
 
-    orch.s2 = AsyncMock()
-    orch.s2.search_papers.return_value = []
-    orch.s2.close = AsyncMock()
-
-    orch.github = AsyncMock()
-    orch.github.search_repos.return_value = []
-    orch.github.get_readme.return_value = ""
-    orch.github.close = AsyncMock()
-
     orch.arxiv = AsyncMock()
     orch.arxiv.search.return_value = []
     orch.arxiv.close = AsyncMock()
@@ -78,11 +69,10 @@ def orchestrator(tmp_path, mock_config):
 
     # Inject mocked API clients into agents
     orch.industry_researcher.tavily = orch.tavily
-    orch.industry_researcher.github = orch.github
     orch.industry_researcher.scraper = orch.scraper
-    orch.academic_researcher.s2 = orch.s2
+    orch.academic_researcher.academic_search = orch.tavily
     orch.academic_researcher.arxiv = orch.arxiv
-    orch.engineering_analyst.github = orch.github
+    orch.engineering_analyst.code_search = orch.tavily
 
     return orch
 
@@ -169,6 +159,7 @@ def test_group_queries(orchestrator):
         search_queries=[
             SearchQuery(query="q1", source="tavily", path_id="p1"),
             SearchQuery(query="q2", source="github", path_id="p1"),
+            SearchQuery(query="q4", source="semantic_scholar", path_id="p1"),
             SearchQuery(query="q3", source="tavily", path_id="p2"),
         ],
     )
@@ -178,7 +169,19 @@ def test_group_queries(orchestrator):
     assert "p1" in grouped
     assert "p2" in grouped
     assert len(grouped["p1"]["tavily"]) == 1
-    assert len(grouped["p1"]["github"]) == 1
+    assert len(grouped["p1"]["code_web"]) == 1
+    assert len(grouped["p1"]["academic_web"]) == 1
+
+
+def test_depth_settings_caps_quick_workload(orchestrator):
+    """Quick depth should keep the path and query budget small."""
+    settings = orchestrator._depth_settings("quick")
+
+    assert settings["max_paths"] == 1
+    assert settings["max_parallel_paths"] == 1
+    assert settings["max_web_queries_per_path"] < orchestrator._depth_settings("deep")[
+        "max_web_queries_per_path"
+    ]
 
 
 def test_write_outputs_both(orchestrator):

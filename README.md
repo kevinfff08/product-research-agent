@@ -89,7 +89,8 @@ LLM 调用由两个变量共同决定：
 | --- | --- | --- |
 | `LLM_MODE` | `setup-token` / `api-key` | `setup-token` 走 CLIProxyAPI；`api-key` 直连 Provider |
 | `LLM_PROVIDER` | `openai` / `deepseek` / `google` | 选择直连 Provider，也用于默认模型选择 |
-| `LLM_MODEL` | 任意可用模型名 | 必须与代理或 Provider 暴露的模型一致 |
+| `LLM_MODEL` | 任意可用模型名 | `setup-token` 和 OpenAI 直连使用；必须与代理或 Provider 暴露的模型一致 |
+| `DEEPSEEK_MODEL` / `GOOGLE_MODEL` | 任意可用模型名 | DeepSeek / Google 直连的可选模型覆盖 |
 | `LLM_PROXY_URL` | URL | CLIProxyAPI 地址，默认 `http://localhost:8317` |
 
 Provider Key：
@@ -104,9 +105,7 @@ Provider Key：
 
 | 变量 | 是否必需 | 说明 |
 | --- | --- | --- |
-| `TAVILY_API_KEY` | 推荐 | Web 和产品搜索 |
-| `SEMANTIC_SCHOLAR_API_KEY` | 可选 | 提高 Semantic Scholar 限额 |
-| `GITHUB_TOKEN` | 可选 | 提高 GitHub API 限额 |
+| `TAVILY_API_KEY` | 推荐 | 产品、网页论文线索、开源实现和社区资料搜索 |
 
 不要把真实密钥写入 `config/default.yaml` 或文档。密钥只放在 `.env` 或系统环境变量中。
 
@@ -146,7 +145,7 @@ src/
   logging_config.py       # 非轮转日志配置
   llm/client.py           # OpenAI-compatible/CLIProxyAPI LLM 客户端
   agents/                 # 调研子 Agent
-  apis/                   # Tavily、Semantic Scholar、GitHub、arXiv、Web scraper
+  apis/                   # Tavily、arXiv、Web scraper，以及历史兼容客户端
   models/                 # Pydantic v2 数据模型
   storage/local_store.py  # 本地 JSON 会话存储
   reporters/              # Markdown/DOCX 输出
@@ -171,20 +170,6 @@ data/research/20260504_120000_实时视频翻译工具/
 ```
 
 日志文件不会按大小轮转；一次运行对应一个日志文件。
-
-## 配置调优
-
-`config/default.yaml` 控制并发和搜索预算：
-
-| 字段 | 说明 |
-| --- | --- |
-| `research.max_paths` | 最大研究路径数 |
-| `research.max_parallel_paths` | 同时运行的研究路径数 |
-| `research.api_concurrency` | 每个 Agent 内部 API 并发数 |
-| `research.llm_analysis_concurrency` | 每个 Agent 内部 LLM 分析并发数 |
-| `research.max_*_per_path` | 每条路径的查询、论文、仓库、网页分析上限 |
-
-提高这些值可以增加覆盖面，但会增加 API 调用、LLM token 和运行时间。
 
 ## 报告结构
 

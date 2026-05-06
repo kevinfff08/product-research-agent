@@ -29,6 +29,7 @@ def test_run_success(planner, mock_llm, sample_decomposition):
 
     assert len(plan.search_queries) >= 2
     assert "tavily" in {q.source for q in plan.search_queries}
+    assert "academic_web" in {q.source for q in plan.search_queries}
     assert any(q.intent for q in plan.search_queries)
     assert plan.estimated_api_calls == 2
 
@@ -61,8 +62,8 @@ def test_fallback_plan_maps_sources(planner, sample_decomposition):
 
     sources = {q.source for q in plan.search_queries}
     assert "tavily" in sources
-    assert "semantic_scholar" in sources
-    assert "github" in sources
+    assert "academic_web" in sources
+    assert "code_web" in sources
 
 
 def test_query_optimization_deduplicates_and_expands(planner, sample_decomposition):
@@ -81,4 +82,4 @@ def test_query_optimization_deduplicates_and_expands(planner, sample_decompositi
     ]
     assert len(matching) == 1
     assert matching[0].priority == 0.9
-    assert {"github", "semantic_scholar", "arxiv"}.issubset({q.source for q in optimized})
+    assert {"code_web", "academic_web", "arxiv"}.issubset({q.source for q in optimized})

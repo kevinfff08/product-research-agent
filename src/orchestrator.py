@@ -20,8 +20,6 @@ from src.models.report import ResearchReport
 
 # API clients
 from src.apis.tavily_client import TavilyClient
-from src.apis.semantic_scholar import SemanticScholarClient
-from src.apis.github_client import GitHubClient
 from src.apis.arxiv_client import ArxivClient
 from src.apis.web_scraper import WebScraper
 
@@ -44,6 +42,55 @@ load_dotenv()
 logger = get_logger("orchestrator")
 
 
+_DEPTH_PROFILES: dict[str, dict[str, int]] = {
+    "quick": {
+        "max_paths": 1,
+        "max_parallel_paths": 1,
+        "api_concurrency": 2,
+        "llm_analysis_concurrency": 1,
+        "max_search_results_per_query": 5,
+        "max_web_queries_per_path": 3,
+        "max_code_queries_per_path": 2,
+        "max_academic_queries_per_path": 2,
+        "max_arxiv_queries_per_path": 2,
+        "max_papers_per_query": 5,
+        "max_papers_per_path": 4,
+        "max_repos_per_path": 4,
+        "max_blog_sources": 4,
+    },
+    "comprehensive": {
+        "max_paths": 3,
+        "max_parallel_paths": 2,
+        "api_concurrency": 3,
+        "llm_analysis_concurrency": 1,
+        "max_search_results_per_query": 8,
+        "max_web_queries_per_path": 5,
+        "max_code_queries_per_path": 4,
+        "max_academic_queries_per_path": 3,
+        "max_arxiv_queries_per_path": 3,
+        "max_papers_per_query": 8,
+        "max_papers_per_path": 8,
+        "max_repos_per_path": 6,
+        "max_blog_sources": 6,
+    },
+    "deep": {
+        "max_paths": 5,
+        "max_parallel_paths": 3,
+        "api_concurrency": 5,
+        "llm_analysis_concurrency": 2,
+        "max_search_results_per_query": 10,
+        "max_web_queries_per_path": 8,
+        "max_code_queries_per_path": 5,
+        "max_academic_queries_per_path": 4,
+        "max_arxiv_queries_per_path": 4,
+        "max_papers_per_query": 10,
+        "max_papers_per_path": 12,
+        "max_repos_per_path": 8,
+        "max_blog_sources": 8,
+    },
+}
+
+
 class Orchestrator:
     """Coordinates the full research pipeline."""
 
@@ -57,8 +104,6 @@ class Orchestrator:
         self.store = LocalStore(data_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        research_config = self.config.get("research", {})
-
         # Build LLM client
         self.llm = LLMClient(
             max_tokens=self.config.get("llm", {}).get("default_max_tokens", 8192),
@@ -69,56 +114,45 @@ class Orchestrator:
             api_key=os.environ.get("TAVILY_API_KEY", ""),
             cache_dir=self.store.cache_dir,
         )
-        self.s2 = SemanticScholarClient(
-            api_key=os.environ.get("SEMANTIC_SCHOLAR_API_KEY"),
-            cache_dir=self.store.cache_dir,
-        )
-        self.github = GitHubClient(
-            token=os.environ.get("GITHUB_TOKEN"),
-            cache_dir=self.store.cache_dir,
-        )
         self.arxiv = ArxivClient()
         self.scraper = WebScraper()
 
         # Build agents
+        default_limits = self._depth_settings("comprehensive")
         self.decomposer = IdeaDecomposer(self.llm, self.store)
         self.planner = ResearchPlanner(self.llm, self.store)
         self.industry_researcher = IndustryResearcher(
             self.llm,
             self.store,
             self.tavily,
-            self.github,
             self.scraper,
-            max_web_queries=research_config.get("max_web_queries_per_path", 10),
-            web_results_per_query=research_config.get("max_search_results_per_query", 10),
-            max_code_queries=research_config.get("max_code_queries_per_path", 8),
-            github_results_per_query=research_config.get("max_github_results_per_query", 10),
-            max_web_analyses=research_config.get("max_blog_sources", 10),
-            max_repo_analyses=research_config.get("max_repos_per_path", 10),
-            api_concurrency=research_config.get("api_concurrency", 5),
-            llm_concurrency=research_config.get("llm_analysis_concurrency", 3),
+            max_web_queries=default_limits["max_web_queries_per_path"],
+            web_results_per_query=default_limits["max_search_results_per_query"],
+            max_web_analyses=default_limits["max_blog_sources"],
+            api_concurrency=default_limits["api_concurrency"],
+            llm_concurrency=default_limits["llm_analysis_concurrency"],
         )
         self.academic_researcher = AcademicResearcher(
             self.llm,
             self.store,
-            self.s2,
+            self.tavily,
             self.arxiv,
-            max_s2_queries=research_config.get("max_academic_queries_per_path", 5),
-            max_arxiv_queries=research_config.get("max_arxiv_queries_per_path", 4),
-            papers_per_query=research_config.get("max_papers_per_query", 15),
-            max_paper_analyses=research_config.get("max_papers_per_path", 15),
-            api_concurrency=research_config.get("api_concurrency", 5),
-            llm_concurrency=research_config.get("llm_analysis_concurrency", 3),
+            max_academic_queries=default_limits["max_academic_queries_per_path"],
+            max_arxiv_queries=default_limits["max_arxiv_queries_per_path"],
+            papers_per_query=default_limits["max_papers_per_query"],
+            max_paper_analyses=default_limits["max_papers_per_path"],
+            api_concurrency=default_limits["api_concurrency"],
+            llm_concurrency=default_limits["llm_analysis_concurrency"],
         )
         self.engineering_analyst = EngineeringAnalyst(
             self.llm,
             self.store,
-            self.github,
-            max_code_queries=research_config.get("max_code_queries_per_path", 8),
-            github_results_per_query=research_config.get("max_github_results_per_query", 10),
-            max_repo_analyses=research_config.get("max_repos_per_path", 10),
-            api_concurrency=research_config.get("api_concurrency", 5),
-            llm_concurrency=research_config.get("llm_analysis_concurrency", 3),
+            self.tavily,
+            max_code_queries=default_limits["max_code_queries_per_path"],
+            code_results_per_query=default_limits["max_search_results_per_query"],
+            max_repo_analyses=default_limits["max_repos_per_path"],
+            api_concurrency=default_limits["api_concurrency"],
+            llm_concurrency=default_limits["llm_analysis_concurrency"],
         )
         self.reputation_scorer = ReputationScorer(self.llm, self.store)
         self.maturity_mapper = MaturityMapper(self.llm, self.store)
@@ -160,13 +194,25 @@ class Orchestrator:
             request.title,
             request.raw_input[:80],
         )
+        depth_settings = self._depth_settings(request.depth)
+        self._apply_depth_settings(depth_settings)
+        effective_max_paths = min(
+            request.max_paths or depth_settings["max_paths"],
+            depth_settings["max_paths"],
+        )
+        logger.info(
+            "Depth profile '%s': max_paths=%d, max_parallel_paths=%d",
+            request.depth,
+            effective_max_paths,
+            depth_settings["max_parallel_paths"],
+        )
 
         try:
             # Step 1: Decompose
             self.store.update_session_status(session_id, "decomposing")
             decomposition = self.decomposer.run(
                 raw_input=request.raw_input,
-                max_paths=request.max_paths or self.config.get("research", {}).get("max_paths", 5),
+                max_paths=effective_max_paths,
             )
             self.store.save_model(
                 f"research/{session_id}/decomposition.json", decomposition,
@@ -198,7 +244,7 @@ class Orchestrator:
 
             # Step 3: Parallel research
             self.store.update_session_status(session_id, "researching")
-            max_parallel_paths = self.config.get("research", {}).get("max_parallel_paths", 3)
+            max_parallel_paths = depth_settings["max_parallel_paths"]
             path_semaphore = asyncio.Semaphore(max(1, int(max_parallel_paths)))
             research_tasks = [
                 self._run_path_research(
@@ -313,9 +359,11 @@ class Orchestrator:
         grouped: dict = {}
         for q in plan.search_queries:
             pid = q.path_id or "default"
+            source = self._normalize_query_source(q.source)
+            normalized = q.model_copy(update={"source": source})
             grouped.setdefault(pid, {})
-            grouped[pid].setdefault(q.source, [])
-            grouped[pid][q.source].append(q)
+            grouped[pid].setdefault(source, [])
+            grouped[pid][source].append(normalized)
         return grouped
 
     async def _run_path_research(
@@ -327,9 +375,9 @@ class Orchestrator:
         """Run industry, academic, and engineering subagents for one path."""
         async with semaphore:
             web_queries = queries_by_source.get("tavily", [])
-            code_queries = queries_by_source.get("github", [])
+            code_queries = queries_by_source.get("code_web", [])
             academic_queries = [
-                *queries_by_source.get("semantic_scholar", []),
+                *queries_by_source.get("academic_web", []),
                 *queries_by_source.get("arxiv", []),
             ]
             logger.info(
@@ -343,7 +391,6 @@ class Orchestrator:
                 self.industry_researcher.run(
                     path=path,
                     web_queries=web_queries,
-                    code_queries=code_queries,
                 ),
                 self.academic_researcher.run(path=path, queries=academic_queries),
                 self.engineering_analyst.run(path=path, code_queries=code_queries),
@@ -382,7 +429,7 @@ class Orchestrator:
 
     async def _cleanup(self) -> None:
         """Close API clients."""
-        for client in [self.tavily, self.s2, self.github, self.arxiv, self.scraper]:
+        for client in [self.tavily, self.arxiv, self.scraper]:
             try:
                 await client.close()
             except Exception:
@@ -391,3 +438,50 @@ class Orchestrator:
             self.llm.close()
         except Exception:
             pass
+
+    def _depth_settings(self, depth: str) -> dict[str, int]:
+        """Return effective workload limits for a depth profile."""
+        normalized = (depth or "comprehensive").strip().lower()
+        settings = dict(_DEPTH_PROFILES.get(normalized, _DEPTH_PROFILES["comprehensive"]))
+        research_config = self.config.get("research", {})
+
+        # Explicit per-depth overrides keep quick/comprehensive/deep meaning stable.
+        profile_overrides = research_config.get("depth_profiles", {}).get(normalized, {})
+        for key, value in profile_overrides.items():
+            if key in settings:
+                settings[key] = int(value)
+        return settings
+
+    def _apply_depth_settings(self, settings: dict[str, int]) -> None:
+        """Apply workload limits to the reusable subagent instances."""
+        self.industry_researcher.max_web_queries = settings["max_web_queries_per_path"]
+        self.industry_researcher.web_results_per_query = settings["max_search_results_per_query"]
+        self.industry_researcher.max_web_analyses = settings["max_blog_sources"]
+        self.industry_researcher.api_concurrency = max(1, settings["api_concurrency"])
+        self.industry_researcher.llm_concurrency = max(1, settings["llm_analysis_concurrency"])
+
+        self.academic_researcher.max_academic_queries = settings["max_academic_queries_per_path"]
+        self.academic_researcher.max_arxiv_queries = settings["max_arxiv_queries_per_path"]
+        self.academic_researcher.papers_per_query = settings["max_papers_per_query"]
+        self.academic_researcher.max_paper_analyses = settings["max_papers_per_path"]
+        self.academic_researcher.api_concurrency = max(1, settings["api_concurrency"])
+        self.academic_researcher.llm_concurrency = max(1, settings["llm_analysis_concurrency"])
+
+        self.engineering_analyst.max_code_queries = settings["max_code_queries_per_path"]
+        self.engineering_analyst.code_results_per_query = settings["max_search_results_per_query"]
+        self.engineering_analyst.max_repo_analyses = settings["max_repos_per_path"]
+        self.engineering_analyst.api_concurrency = max(1, settings["api_concurrency"])
+        self.engineering_analyst.llm_concurrency = max(1, settings["llm_analysis_concurrency"])
+
+    @staticmethod
+    def _normalize_query_source(source: str) -> str:
+        """Normalize legacy planner source names to current search channels."""
+        source_map = {
+            "web": "tavily",
+            "github": "code_web",
+            "code": "code_web",
+            "semantic_scholar": "academic_web",
+            "academic": "academic_web",
+        }
+        normalized = (source or "tavily").strip().lower()
+        return source_map.get(normalized, normalized or "tavily")

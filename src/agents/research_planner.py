@@ -11,8 +11,8 @@ from src.models.common import ResearchWeight
 
 _SOURCE_LIMITS = {
     "tavily": 8,
-    "github": 8,
-    "semantic_scholar": 5,
+    "code_web": 5,
+    "academic_web": 4,
     "arxiv": 4,
 }
 
@@ -60,9 +60,10 @@ class ResearchPlanner(BaseAgent):
 
         queries = []
         for q in result.get("search_queries", []):
+            source = self._normalize_source(q.get("source", "tavily"))
             queries.append(SearchQuery(
                 query=q.get("query", ""),
-                source=q.get("source", "tavily"),
+                source=source,
                 path_id=q.get("path_id", ""),
                 priority=float(q.get("priority", 0.5)),
                 intent=q.get("intent", "general"),
@@ -112,7 +113,7 @@ class ResearchPlanner(BaseAgent):
         queries = []
         for path in decomposition.paths:
             for source, query_list in path.search_queries.items():
-                source_map = {"web": "tavily", "academic": "semantic_scholar", "code": "github"}
+                source_map = {"web": "tavily", "academic": "academic_web", "code": "code_web"}
                 mapped_source = source_map.get(source, "tavily")
                 for q in query_list:
                     queries.append(SearchQuery(
@@ -158,15 +159,15 @@ class ResearchPlanner(BaseAgent):
                             intent="alternatives",
                         ),
                         SearchQuery(
-                            query=f"{term} open source github",
-                            source="github",
+                            query=f"{term} open source implementation repository",
+                            source="code_web",
                             path_id=path.path_id,
                             priority=path.priority,
                             intent="repo_discovery",
                         ),
                         SearchQuery(
                             query=f"{term} benchmark evaluation survey",
-                            source="semantic_scholar",
+                            source="academic_web",
                             path_id=path.path_id,
                             priority=max(path.priority - 0.1, 0.1),
                             intent="evidence",
@@ -217,3 +218,15 @@ class ResearchPlanner(BaseAgent):
     @staticmethod
     def _normalize_query(query: str) -> str:
         return " ".join(query.lower().split())
+
+    @staticmethod
+    def _normalize_source(source: str) -> str:
+        source_map = {
+            "web": "tavily",
+            "semantic_scholar": "academic_web",
+            "github": "code_web",
+            "code": "code_web",
+            "academic": "academic_web",
+        }
+        normalized = source.strip().lower()
+        return source_map.get(normalized, normalized or "tavily")

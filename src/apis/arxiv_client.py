@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 import xml.etree.ElementTree as ET
 
 import httpx
@@ -19,14 +20,19 @@ class ArxivClient:
     Not extending BaseAPIClient because arXiv uses XML, not JSON.
     """
 
-    BASE_URL = "http://export.arxiv.org/api/query"
+    BASE_URL = "https://export.arxiv.org/api/query"
+    USER_AGENT = "ProductResearch/0.1 (research agent; contact: local)"
 
     def __init__(self):
         self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(timeout=30.0)
+            self._client = httpx.AsyncClient(
+                timeout=30.0,
+                follow_redirects=True,
+                headers={"User-Agent": self.USER_AGENT},
+            )
         return self._client
 
     async def search(
@@ -60,6 +66,50 @@ class ArxivClient:
         logger.info("arXiv returned %d papers for: %s", len(papers), query)
         return papers
 
+    async def download_pdf(
+        self,
+        arxiv_id_or_url: str,
+        output_dir: str | Path,
+        filename: str | None = None,
+    ) -> Path:
+        """Download an arXiv PDF to ``output_dir`` and return the saved path."""
+        arxiv_id = self._extract_arxiv_id(arxiv_id_or_url)
+        pdf_url = self._to_pdf_url(arxiv_id_or_url)
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        target = output_path / (filename or f"{arxiv_id.replace('/', '_')}.pdf")
+
+        logger.info("arXiv PDF download: %s", pdf_url)
+        client = await self._get_client()
+        response = await client.get(pdf_url)
+        response.raise_for_status()
+
+        content_type = response.headers.get("content-type", "").lower()
+        if "pdf" not in content_type and not response.content.startswith(b"%PDF"):
+            raise RuntimeError(f"arXiv PDF download did not return a PDF: {pdf_url}")
+
+        target.write_bytes(response.content)
+        return target
+
+    @staticmethod
+    def _extract_arxiv_id(value: str) -> str:
+        cleaned = value.strip().rstrip("/")
+        if "/pdf/" in cleaned:
+            return cleaned.rsplit("/pdf/", 1)[-1].removesuffix(".pdf")
+        if "/abs/" in cleaned:
+            return cleaned.rsplit("/abs/", 1)[-1]
+        return cleaned.removesuffix(".pdf")
+
+    @classmethod
+    def _to_pdf_url(cls, value: str) -> str:
+        cleaned = value.strip()
+        if cleaned.startswith("http://"):
+            cleaned = "https://" + cleaned.removeprefix("http://")
+        if cleaned.startswith("https://") and "/pdf/" in cleaned:
+            return cleaned
+        arxiv_id = cls._extract_arxiv_id(cleaned)
+        return f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+
     def _parse_response(self, xml_text: str) -> list[dict]:
         """Parse arXiv Atom XML response into list of dicts."""
         root = ET.fromstring(xml_text)
@@ -86,7 +136,7 @@ class ArxivClient:
             # Find PDF link
             for link in entry.findall("atom:link", ARXIV_NS):
                 if link.get("title") == "pdf":
-                    paper["pdf_url"] = link.get("href", "")
+                    paper["pdf_url"] = self._to_pdf_url(link.get("href", ""))
                     break
             papers.append(paper)
 

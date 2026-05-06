@@ -1,0 +1,38 @@
+You are analyzing product and market evidence for this research path:
+
+Path: {path_title}
+Key questions: {key_questions}
+
+Search results:
+{sources_json}
+
+Extract only claims supported by the provided snippets. Prefer current products,
+vendors, pricing/deployment signals, adoption signals, and important caveats.
+
+Return JSON only:
+{{
+  "products": [
+    {{
+      "name": "",
+      "company": "",
+      "description": "",
+      "capabilities": [],
+      "limitations": [],
+      "pricing_model": "",
+      "url": "",
+      "maturity": "development",
+      "is_open_source": false,
+      "github_url": ""
+    }}
+  ],
+  "companies": [
+    {{
+      "name": "",
+      "size": "",
+      "funding": "",
+      "reputation_notes": ""
+    }}
+  ],
+  "key_insights": [],
+  "market_trends": ""
+}}

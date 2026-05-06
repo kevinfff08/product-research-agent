@@ -33,7 +33,7 @@ def arxiv():
 @pytest.mark.asyncio
 async def test_search(arxiv):
     with respx.mock:
-        respx.get("http://export.arxiv.org/api/query").mock(
+        respx.get("https://export.arxiv.org/api/query").mock(
             return_value=httpx.Response(200, text=MOCK_ARXIV_XML)
         )
         papers = await arxiv.search("LLM code review")
@@ -43,14 +43,14 @@ async def test_search(arxiv):
     assert papers[0]["arxiv_id"] == "2301.12345v1"
     assert len(papers[0]["authors"]) == 2
     assert "cs.CL" in papers[0]["categories"]
-    assert papers[0]["pdf_url"] == "http://arxiv.org/pdf/2301.12345v1"
+    assert papers[0]["pdf_url"] == "https://arxiv.org/pdf/2301.12345v1"
 
 
 @pytest.mark.asyncio
 async def test_search_empty(arxiv):
     empty_xml = '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>'
     with respx.mock:
-        respx.get("http://export.arxiv.org/api/query").mock(
+        respx.get("https://export.arxiv.org/api/query").mock(
             return_value=httpx.Response(200, text=empty_xml)
         )
         papers = await arxiv.search("nonexistent topic xyz")
@@ -65,6 +65,23 @@ async def test_parse_response(arxiv):
     paper = papers[0]
     assert paper["summary"].startswith("This paper presents")
     assert paper["published"] == "2023-01-15T00:00:00Z"
+
+
+@pytest.mark.asyncio
+async def test_download_pdf(arxiv, tmp_path):
+    pdf_bytes = b"%PDF-1.4\nfake"
+    with respx.mock:
+        respx.get("https://arxiv.org/pdf/2301.12345.pdf").mock(
+            return_value=httpx.Response(
+                200,
+                content=pdf_bytes,
+                headers={"content-type": "application/pdf"},
+            )
+        )
+        path = await arxiv.download_pdf("2301.12345", tmp_path)
+
+    assert path.name == "2301.12345.pdf"
+    assert path.read_bytes() == pdf_bytes
 
 
 @pytest.mark.asyncio

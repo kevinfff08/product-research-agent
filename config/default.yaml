@@ -1,17 +1,47 @@
 research:
-  max_paths: 5
-  max_parallel_paths: 3
-  api_concurrency: 5
-  llm_analysis_concurrency: 3
-  max_search_results_per_query: 10
-  max_web_queries_per_path: 10
-  max_code_queries_per_path: 8
-  max_academic_queries_per_path: 5
-  max_arxiv_queries_per_path: 4
-  max_github_results_per_query: 10
-  max_papers_per_path: 15
-  max_repos_per_path: 10
-  max_blog_sources: 10
+  depth_profiles:
+    quick:
+      max_paths: 1
+      max_parallel_paths: 1
+      api_concurrency: 2
+      llm_analysis_concurrency: 1
+      max_search_results_per_query: 5
+      max_web_queries_per_path: 3
+      max_code_queries_per_path: 2
+      max_academic_queries_per_path: 2
+      max_arxiv_queries_per_path: 2
+      max_papers_per_query: 5
+      max_papers_per_path: 4
+      max_repos_per_path: 4
+      max_blog_sources: 4
+    comprehensive:
+      max_paths: 3
+      max_parallel_paths: 2
+      api_concurrency: 3
+      llm_analysis_concurrency: 1
+      max_search_results_per_query: 8
+      max_web_queries_per_path: 5
+      max_code_queries_per_path: 4
+      max_academic_queries_per_path: 3
+      max_arxiv_queries_per_path: 3
+      max_papers_per_query: 8
+      max_papers_per_path: 8
+      max_repos_per_path: 6
+      max_blog_sources: 6
+    deep:
+      max_paths: 5
+      max_parallel_paths: 3
+      api_concurrency: 5
+      llm_analysis_concurrency: 2
+      max_search_results_per_query: 10
+      max_web_queries_per_path: 8
+      max_code_queries_per_path: 5
+      max_academic_queries_per_path: 4
+      max_arxiv_queries_per_path: 4
+      max_papers_per_query: 10
+      max_papers_per_path: 12
+      max_repos_per_path: 8
+      max_blog_sources: 8
 
 weights:
   industry: 0.60
@@ -20,14 +50,8 @@ weights:
 
 api:
   tavily:
-    search_depth: "advanced"
+    search_depth: "basic"
     max_results: 10
-  semantic_scholar:
-    rate_limit_rps: 1.0
-    rate_limit_rps_keyed: 10.0
-  github:
-    rate_limit_rps: 0.5
-    rate_limit_rps_keyed: 5.0
   arxiv:
     rate_limit_rps: 0.3
     max_results: 20

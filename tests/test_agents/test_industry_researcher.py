@@ -9,7 +9,6 @@ import pytest
 
 from src.agents.industry_researcher import IndustryResearcher
 from src.apis.tavily_client import TavilyClient
-from src.apis.github_client import GitHubClient
 from src.apis.web_scraper import WebScraper
 
 
@@ -30,52 +29,40 @@ def mock_tavily():
 
 
 @pytest.fixture
-def mock_github():
-    client = AsyncMock(spec=GitHubClient)
-    client.search_repos.return_value = [
-        {
-            "full_name": "owner/repo",
-            "html_url": "https://github.com/owner/repo",
-            "stargazers_count": 500,
-            "forks_count": 50,
-            "language": "Python",
-            "description": "A code review tool",
-            "license": {"spdx_id": "MIT"},
-            "topics": ["code-review"],
-            "updated_at": "2025-01-01",
-        }
-    ]
-    client.get_readme.return_value = "# README\nA great tool."
-    return client
-
-
-@pytest.fixture
 def mock_scraper():
     return AsyncMock(spec=WebScraper)
 
 
 @pytest.fixture
-def researcher(mock_llm, temp_store, mock_tavily, mock_github, mock_scraper):
-    return IndustryResearcher(mock_llm, temp_store, mock_tavily, mock_github, mock_scraper)
+def researcher(mock_llm, temp_store, mock_tavily, mock_scraper):
+    return IndustryResearcher(mock_llm, temp_store, mock_tavily, mock_scraper)
 
 
 @pytest.mark.asyncio
 async def test_run_success(researcher, mock_llm, sample_research_path):
     mock_llm.generate_json.return_value = json.dumps({
         "products": [
-            {"name": "CodeReviewAI", "company": "TechCo", "description": "AI reviewer"}
+            {
+                "name": "CodeReviewAI",
+                "company": "TechCo",
+                "description": "AI reviewer",
+                "is_open_source": "yes",
+            }
         ],
         "companies": [
             {"name": "TechCo", "size": "startup", "reputation_notes": "Good"}
         ],
         "key_insights": ["AI improves code quality"],
+        "market_trends": "AI code review tools are maturing.",
     })
 
     result = await researcher.run(path=sample_research_path)
 
     assert result.path_id == "p1"
     assert len(result.products) >= 1
+    assert result.products[0].is_open_source is True
     assert len(result.sources) >= 1
+    assert result.repos == []
 
 
 @pytest.mark.asyncio

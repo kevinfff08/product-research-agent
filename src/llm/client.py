@@ -69,16 +69,15 @@ class LLMClient:
             supported = ", ".join(sorted(_PROVIDER_DEFAULTS))
             raise ValueError(f"Unsupported LLM_PROVIDER '{self.provider}'. Use one of: {supported}")
 
-        provider_config = _PROVIDER_DEFAULTS[self.provider]
-        default_model = str(provider_config["model"])
-        self.model = model or os.environ.get("LLM_MODEL", default_model)
-        self.max_tokens = max_tokens
-        self.timeout = timeout
-        self._client: httpx.Client | None = None
-
         self.mode = os.environ.get("LLM_MODE", "api-key").strip().lower()
         if self.mode not in {"setup-token", "api-key"}:
             raise ValueError("LLM_MODE must be one of: setup-token, api-key")
+
+        provider_config = _PROVIDER_DEFAULTS[self.provider]
+        self.model = model or self._default_model_for_mode()
+        self.max_tokens = max_tokens
+        self.timeout = timeout
+        self._client: httpx.Client | None = None
 
         if self.mode == "setup-token":
             proxy_url = base_url or os.environ.get("LLM_PROXY_URL", _DEFAULT_PROXY_URL)
@@ -119,6 +118,15 @@ class LLMClient:
         if ensure_v1 and not normalized.endswith("/v1"):
             normalized = f"{normalized}/v1"
         return normalized
+
+    def _default_model_for_mode(self) -> str:
+        """Pick a default model without cross-provider env leakage."""
+        provider_config = _PROVIDER_DEFAULTS[self.provider]
+        default_model = str(provider_config["model"])
+        if self.mode == "setup-token" or self.provider == "openai":
+            return os.environ.get("LLM_MODEL", default_model)
+        provider_model_env = f"{self.provider.upper()}_MODEL"
+        return os.environ.get(provider_model_env, default_model)
 
     @property
     def client(self) -> httpx.Client:

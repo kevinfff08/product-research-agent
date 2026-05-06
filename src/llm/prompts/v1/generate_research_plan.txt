@@ -14,8 +14,8 @@ You are a research planning expert. Given the decomposition of a product idea in
 ## Instructions
 For each research path, generate specific, targeted search queries for each source:
 - **tavily**: Web search queries for products, companies, blog posts, documentation
-- **semantic_scholar**: Academic paper search queries (use technical terminology)
-- **github**: Code repository search queries
+- **academic_web**: Academic web search queries for papers, benchmarks, proceedings, model cards, and Papers with Code pages
+- **code_web**: Web search queries for open-source implementations across GitHub, GitLab, Hugging Face, Sourcegraph-indexed repos, and official docs
 - **arxiv**: Preprint search queries (use field-specific terms)
 
 Prioritize queries based on the research weights. More queries for industry sources.
@@ -34,7 +34,7 @@ Return a JSON object:
     "search_queries": [
         {{
             "query": "specific search query",
-            "source": "tavily|semantic_scholar|github|arxiv",
+            "source": "tavily|academic_web|code_web|arxiv",
             "path_id": "p1",
             "priority": 0.9,
             "intent": "product_landscape|alternatives|repo_discovery|evidence|community"

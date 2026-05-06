@@ -8,25 +8,23 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.agents.academic_researcher import AcademicResearcher
-from src.apis.semantic_scholar import SemanticScholarClient
+from src.apis.tavily_client import TavilyClient
 from src.apis.arxiv_client import ArxivClient
 
 
 @pytest.fixture
-def mock_s2():
-    client = AsyncMock(spec=SemanticScholarClient)
-    client.search_papers.return_value = [
-        {
-            "paperId": "abc123",
-            "title": "LLM Code Review",
-            "authors": [{"name": "Alice"}, {"name": "Bob"}],
-            "year": 2024,
-            "venue": "ICSE",
-            "citationCount": 50,
-            "abstract": "We present an LLM-based code review approach.",
-            "externalIds": {"DOI": "10.1234/test", "ArXiv": "2401.00001"},
-        }
-    ]
+def mock_tavily():
+    client = AsyncMock(spec=TavilyClient)
+    client.search.return_value = {
+        "results": [
+            {
+                "title": "LLM Code Review benchmark paper",
+                "url": "https://arxiv.org/abs/2401.00001",
+                "content": "A 2024 benchmark for LLM-based code review.",
+                "score": 0.9,
+            }
+        ]
+    }
     return client
 
 
@@ -48,33 +46,40 @@ def mock_arxiv():
 
 
 @pytest.fixture
-def researcher(mock_llm, temp_store, mock_s2, mock_arxiv):
-    return AcademicResearcher(mock_llm, temp_store, mock_s2, mock_arxiv)
+def researcher(mock_llm, temp_store, mock_tavily, mock_arxiv):
+    return AcademicResearcher(mock_llm, temp_store, mock_tavily, mock_arxiv)
 
 
 @pytest.mark.asyncio
 async def test_run_success(researcher, mock_llm, sample_research_path):
     mock_llm.generate_json.return_value = json.dumps({
-        "principles": "Transformer-based approach",
-        "methods": "Fine-tuned LLM on code review data",
-        "experiments": "Tested on 1000 PRs",
-        "conclusions": "Improves review quality",
-        "deficiencies": "Limited to Python only",
-        "venue_prestige": "top_conference",
-        "known_lab": "Google Research",
+        "research_trends": "Transformer-based code review is moving toward benchmarks.",
+        "frontier_directions": "Multilingual and repository-level evaluation.",
+        "key_researchers": ["Alice", "Bob"],
     })
 
     result = await researcher.run(path=sample_research_path)
 
     assert result.path_id == "p1"
     assert len(result.papers) >= 1
-    assert result.papers[0].title in ("LLM Code Review", "Novel Code Analysis")
+    assert result.papers[0].title in ("LLM Code Review benchmark paper", "Novel Code Analysis")
     assert len(result.sources) >= 1
+    assert result.research_trends
 
 
 @pytest.mark.asyncio
-async def test_merge_deduplication(researcher, mock_s2, mock_arxiv, mock_llm, sample_research_path):
+async def test_merge_deduplication(researcher, mock_tavily, mock_arxiv, mock_llm, sample_research_path):
     # Both sources return same title
+    mock_tavily.search.return_value = {
+        "results": [
+            {
+                "title": "LLM Code Review",
+                "url": "https://arxiv.org/abs/2401.00001",
+                "content": "Same paper.",
+                "score": 0.8,
+            }
+        ]
+    }
     mock_arxiv.search.return_value = [
         {
             "arxiv_id": "2401.00001",
@@ -87,8 +92,7 @@ async def test_merge_deduplication(researcher, mock_s2, mock_arxiv, mock_llm, sa
         }
     ]
     mock_llm.generate_json.return_value = json.dumps({
-        "principles": "", "methods": "", "experiments": "",
-        "conclusions": "", "deficiencies": "",
+        "research_trends": "", "frontier_directions": "", "key_researchers": [],
     })
 
     result = await researcher.run(path=sample_research_path)
@@ -98,11 +102,12 @@ async def test_merge_deduplication(researcher, mock_s2, mock_arxiv, mock_llm, sa
 
 
 @pytest.mark.asyncio
-async def test_s2_failure_still_returns(researcher, mock_s2, mock_llm, sample_research_path):
-    mock_s2.search_papers.side_effect = Exception("API error")
+async def test_academic_web_failure_still_returns(
+    researcher, mock_tavily, mock_llm, sample_research_path,
+):
+    mock_tavily.search.side_effect = Exception("API error")
     mock_llm.generate_json.return_value = json.dumps({
-        "principles": "", "methods": "", "experiments": "",
-        "conclusions": "", "deficiencies": "",
+        "research_trends": "", "frontier_directions": "", "key_researchers": [],
     })
 
     result = await researcher.run(path=sample_research_path)
@@ -113,20 +118,16 @@ async def test_s2_failure_still_returns(researcher, mock_s2, mock_llm, sample_re
 
 
 @pytest.mark.asyncio
-async def test_build_from_s2(researcher):
+async def test_build_from_web_result(researcher):
     data = {
-        "paperId": "xyz",
-        "title": "Test",
-        "authors": [{"name": "A"}],
-        "year": 2023,
-        "venue": "NeurIPS",
-        "citationCount": 100,
-        "externalIds": {"DOI": "10.1/test"},
+        "title": "Test 2023",
+        "url": "https://openreview.net/forum?id=abc",
+        "content": "A 2023 benchmark paper.",
     }
-    paper = researcher._build_from_s2(data)
-    assert paper.title == "Test"
+    paper = researcher._build_from_web_result(data)
+    assert paper.title == "Test 2023"
     assert paper.year == 2023
-    assert paper.citation_count == 100
+    assert paper.venue == "OpenReview"
 
 
 @pytest.mark.asyncio

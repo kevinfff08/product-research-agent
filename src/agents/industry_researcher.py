@@ -1,25 +1,29 @@
-"""Agent that conducts industry research using web search and GitHub."""
+"""Agent that conducts industry research using web search."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timezone
+from typing import Any
+
+from pydantic import ValidationError
 
 from src.agents.base import BaseAgent
 from src.llm.client import LLMClient
 from src.storage.local_store import LocalStore
 from src.apis.tavily_client import TavilyClient
-from src.apis.github_client import GitHubClient
 from src.apis.web_scraper import WebScraper
 from src.models.plan import ResearchPath, SearchQuery
 from src.models.industry import (
-    ProductInfo, CompanyInfo, RepoAnalysis, BlogSummary, IndustryResearchResult,
+    ProductInfo, CompanyInfo, BlogSummary, IndustryResearchResult,
 )
+from src.models.common import MaturityStage
 from src.models.common import SourceReference, SourceType
 
 
 class IndustryResearcher(BaseAgent):
-    """Conducts industry research: products, companies, repos, blogs."""
+    """Conducts industry research: products, companies, market signals, blogs."""
 
     agent_name = "industry_researcher"
 
@@ -28,28 +32,20 @@ class IndustryResearcher(BaseAgent):
         llm: LLMClient,
         store: LocalStore,
         tavily: TavilyClient,
-        github: GitHubClient,
         scraper: WebScraper,
         *,
         max_web_queries: int = 10,
         web_results_per_query: int = 5,
-        max_code_queries: int = 8,
-        github_results_per_query: int = 10,
         max_web_analyses: int = 15,
-        max_repo_analyses: int = 10,
         api_concurrency: int = 5,
         llm_concurrency: int = 3,
     ):
         super().__init__(llm, store)
         self.tavily = tavily
-        self.github = github
         self.scraper = scraper
         self.max_web_queries = max_web_queries
         self.web_results_per_query = web_results_per_query
-        self.max_code_queries = max_code_queries
-        self.github_results_per_query = github_results_per_query
         self.max_web_analyses = max_web_analyses
-        self.max_repo_analyses = max_repo_analyses
         self.api_concurrency = max(1, api_concurrency)
         self.llm_concurrency = max(1, llm_concurrency)
 
@@ -68,45 +64,31 @@ class IndustryResearcher(BaseAgent):
             SearchQuery(query=q, source="tavily", path_id=path.path_id)
             for q in path.search_queries.get("web", [])
         ]
-        c_queries = code_queries or [
-            SearchQuery(query=q, source="github", path_id=path.path_id)
-            for q in path.search_queries.get("code", [])
-        ]
+        if code_queries:
+            self.logger.debug(
+                "Ignoring %d code queries in industry research; engineering handles code search",
+                len(code_queries),
+            )
 
-        # Run searches in parallel
-        web_results, code_results = await asyncio.gather(
-            self._search_web(w_queries),
-            self._search_github(c_queries),
-            return_exceptions=True,
-        )
+        web_results = await self._search_web(w_queries)
 
-        if isinstance(web_results, Exception):
-            self.logger.error("Web search failed: %s", web_results)
-            web_results = []
-        if isinstance(code_results, Exception):
-            self.logger.error("GitHub search failed: %s", code_results)
-            code_results = []
-
-        # Analyze web results with LLM
-        products, companies, blogs, sources = await self._analyze_web_results(
+        # Analyze web results in one bounded LLM call instead of one call per source.
+        products, companies, blogs, sources, market_trends = await self._analyze_web_results(
             web_results, path,
         )
-
-        # Analyze GitHub repos
-        repos, repo_sources = await self._analyze_repos(code_results, path)
-        sources.extend(repo_sources)
 
         result = IndustryResearchResult(
             path_id=path.path_id,
             products=products,
             companies=companies,
-            repos=repos,
+            repos=[],
             blog_summaries=blogs,
+            market_trends=market_trends,
             sources=sources,
         )
         self.logger.info(
-            "Industry research complete: %d products, %d repos, %d blogs",
-            len(products), len(repos), len(blogs),
+            "Industry research complete: %d products, %d blogs",
+            len(products), len(blogs),
         )
         return result
 
@@ -119,7 +101,9 @@ class IndustryResearcher(BaseAgent):
                 try:
                     data = await self.tavily.search(
                         sq.query,
+                        search_depth="basic",
                         max_results=self.web_results_per_query,
+                        include_answer=False,
                     )
                 except Exception as exc:
                     self.logger.warning("Tavily search failed for '%s': %s", sq.query, exc)
@@ -147,178 +131,133 @@ class IndustryResearcher(BaseAgent):
                 all_results.append(result)
         return all_results
 
-    async def _search_github(self, queries: list[SearchQuery]) -> list[dict]:
-        """Search GitHub repos."""
-        semaphore = asyncio.Semaphore(self.api_concurrency)
-
-        async def search_one(sq: SearchQuery) -> list[dict]:
-            async with semaphore:
-                try:
-                    return await self.github.search_repos(
-                        sq.query,
-                        language=None,
-                        limit=self.github_results_per_query,
-                    )
-                except Exception as exc:
-                    self.logger.warning("GitHub search failed for '%s': %s", sq.query, exc)
-                    return []
-
-        groups = await asyncio.gather(
-            *(search_one(sq) for sq in queries[: self.max_code_queries]),
-        )
-        all_repos = []
-        seen_urls = set()
-        for group in groups:
-            for r in group:
-                url = r.get("html_url", "")
-                if url not in seen_urls:
-                    seen_urls.add(url)
-                    all_repos.append(r)
-        return all_repos
-
     async def _analyze_web_results(
         self, results: list[dict], path: ResearchPath,
-    ) -> tuple[list[ProductInfo], list[CompanyInfo], list[BlogSummary], list[SourceReference]]:
-        """Use LLM to analyze web search results."""
-        semaphore = asyncio.Semaphore(self.llm_concurrency)
+    ) -> tuple[
+        list[ProductInfo],
+        list[CompanyInfo],
+        list[BlogSummary],
+        list[SourceReference],
+        str,
+    ]:
+        """Use one LLM call to analyze the top web search results."""
+        selected = [
+            r for r in results[: self.max_web_analyses]
+            if r.get("url") and (r.get("content") or r.get("raw_content"))
+        ]
+        sources = self._build_sources(selected)
+        if not selected:
+            return [], [], [], sources, ""
 
-        async def analyze_one(
-            r: dict,
-        ) -> tuple[list[ProductInfo], list[CompanyInfo], list[BlogSummary], SourceReference | None]:
-            title = r.get("title", "")
-            content = r.get("content", "")
-            url = r.get("url", "")
-
-            if not content:
-                return [], [], [], None
-
-            source = SourceReference(
-                url=url,
-                title=title,
-                source_type=SourceType.WEB,
-                retrieved_at=datetime.now(timezone.utc).isoformat(),
-                relevance_score=float(r.get("score", 0.5)),
-            )
-
-            async with semaphore:
-                analysis = await self._call_llm_json_async(
-                    prompt=self._render_template(
-                        "analyze_industry_source",
-                        {
-                            "path_title": path.title,
-                            "key_questions": "; ".join(path.key_questions[:3]),
-                            "source_title": title,
-                            "source_url": url,
-                            "source_content": content[:5000],
-                        },
-                    ),
-                    temperature=0.2,
-                )
-
-            if not analysis or not isinstance(analysis, dict):
-                return [], [], [], source
-
-            products = [
-                ProductInfo(**{k: v for k, v in p.items() if k in ProductInfo.model_fields})
-                for p in analysis.get("products", [])
-            ]
-            companies = [
-                CompanyInfo(**{k: v for k, v in c.items() if k in CompanyInfo.model_fields})
-                for c in analysis.get("companies", [])
-            ]
-            blogs = []
-            if analysis.get("key_insights"):
-                blogs.append(
-                    BlogSummary(
-                        title=title,
-                        url=url,
-                        key_points=analysis.get("key_insights", []),
-                    )
-                )
-            return products, companies, blogs, source
-
-        analyzed = await asyncio.gather(
-            *(analyze_one(r) for r in results[: self.max_web_analyses]),
+        source_payload = [
+            {
+                "index": i + 1,
+                "title": r.get("title", ""),
+                "url": r.get("url", ""),
+                "query": r.get("_query", ""),
+                "content": (r.get("content", "") or r.get("raw_content", ""))[:1200],
+            }
+            for i, r in enumerate(selected)
+        ]
+        analysis = await self._call_llm_json_async(
+            prompt=self._render_template(
+                "analyze_industry_batch",
+                {
+                    "path_title": path.title,
+                    "key_questions": "; ".join(path.key_questions[:3]),
+                    "sources_json": json.dumps(source_payload, ensure_ascii=False, indent=2),
+                },
+            ),
+            temperature=0.2,
         )
+
+        if not analysis or not isinstance(analysis, dict):
+            return [], [], [], sources, ""
+
         products: list[ProductInfo] = []
         companies: list[CompanyInfo] = []
-        blogs: list[BlogSummary] = []
+        for product_data in analysis.get("products", []):
+            if isinstance(product_data, dict):
+                product = self._coerce_product(product_data)
+                if product is not None:
+                    products.append(product)
+        for company_data in analysis.get("companies", []):
+            if isinstance(company_data, dict):
+                company = self._coerce_company(company_data)
+                if company is not None:
+                    companies.append(company)
+
+        key_insights = self._as_str_list(analysis.get("key_insights", []))
+        blogs = [
+            BlogSummary(
+                title=source.title,
+                url=source.url,
+                key_points=key_insights[:5],
+            )
+            for source in sources[: min(len(sources), 3)]
+            if key_insights
+        ]
+        market_trends = str(analysis.get("market_trends", ""))
+        return products, companies, blogs, sources, market_trends
+
+    def _build_sources(self, results: list[dict]) -> list[SourceReference]:
+        """Build source references from raw web results."""
         sources: list[SourceReference] = []
-        for product_group, company_group, blog_group, source in analyzed:
-            products.extend(product_group)
-            companies.extend(company_group)
-            blogs.extend(blog_group)
-            if source:
-                sources.append(source)
-        return products, companies, blogs, sources
-
-    async def _analyze_repos(
-        self, repos: list[dict], path: ResearchPath,
-    ) -> tuple[list[RepoAnalysis], list[SourceReference]]:
-        """Analyze GitHub repositories."""
-        semaphore = asyncio.Semaphore(self.llm_concurrency)
-
-        async def analyze_one(repo_data: dict) -> tuple[RepoAnalysis | None, SourceReference | None]:
-            url = repo_data.get("html_url", "")
-            owner, name = GitHubClient.parse_repo_url(url)
-            if not owner:
-                return None, None
-
-            try:
-                readme = await self.github.get_readme(owner, name)
-            except Exception:
-                readme = ""
-
-            async with semaphore:
-                analysis = await self._call_llm_json_async(
-                    prompt=self._render_template(
-                        "analyze_repo",
-                        {
-                            "path_title": path.title,
-                            "repo_name": repo_data.get("full_name", f"{owner}/{name}"),
-                            "repo_url": url,
-                            "stars": repo_data.get("stargazers_count", 0),
-                            "forks": repo_data.get("forks_count", 0),
-                            "language": repo_data.get("language", ""),
-                            "license": (repo_data.get("license") or {}).get("spdx_id", ""),
-                            "description": repo_data.get("description", ""),
-                            "topics": ", ".join(repo_data.get("topics", [])),
-                            "updated_at": repo_data.get("updated_at", ""),
-                            "readme_excerpt": readme[:3000],
-                        },
-                    ),
-                    temperature=0.2,
-                )
-
-            repo_analysis = RepoAnalysis(
-                repo_url=url,
-                name=repo_data.get("full_name", ""),
-                stars=repo_data.get("stargazers_count", 0),
-                forks=repo_data.get("forks_count", 0),
-                language=repo_data.get("language", ""),
-                last_updated=repo_data.get("updated_at", ""),
-                license=(repo_data.get("license") or {}).get("spdx_id", ""),
-                description=repo_data.get("description", ""),
-                topics=repo_data.get("topics", []),
-            )
-
-            if analysis and isinstance(analysis, dict):
-                repo_analysis.code_quality_notes = analysis.get("code_quality_notes", "")
-                repo_analysis.deployment_readiness = analysis.get("deployment_readiness", "")
-                repo_analysis.community_health = analysis.get("community_health", "")
-                repo_analysis.key_dependencies = analysis.get("key_dependencies", [])
-
-            source = SourceReference(
-                url=url,
-                title=repo_analysis.name,
-                source_type=SourceType.REPO,
+        for result in results:
+            sources.append(SourceReference(
+                url=result.get("url", ""),
+                title=result.get("title", ""),
+                source_type=SourceType.WEB,
                 retrieved_at=datetime.now(timezone.utc).isoformat(),
-            )
-            return repo_analysis, source
+                relevance_score=float(result.get("score", 0.5) or 0.5),
+                snippet=(result.get("content", "") or result.get("raw_content", ""))[:500],
+            ))
+        return sources
 
-        analyzed = await asyncio.gather(
-            *(analyze_one(repo) for repo in repos[: self.max_repo_analyses]),
-        )
-        analyzed_repos = [repo for repo, _ in analyzed if repo is not None]
-        sources = [source for _, source in analyzed if source is not None]
-        return analyzed_repos, sources
+    def _coerce_product(self, data: dict[str, Any]) -> ProductInfo | None:
+        """Coerce tolerant LLM product JSON into the strict ProductInfo model."""
+        payload = {k: v for k, v in data.items() if k in ProductInfo.model_fields}
+        payload["capabilities"] = self._as_str_list(payload.get("capabilities", []))
+        payload["limitations"] = self._as_str_list(payload.get("limitations", []))
+        payload["is_open_source"] = self._as_bool(payload.get("is_open_source", False))
+        maturity = str(payload.get("maturity", MaturityStage.DEVELOPMENT.value))
+        if maturity not in {item.value for item in MaturityStage}:
+            maturity = MaturityStage.DEVELOPMENT.value
+        payload["maturity"] = maturity
+        try:
+            return ProductInfo(**payload)
+        except ValidationError as exc:
+            self.logger.debug("Dropping invalid product entry: %s", exc)
+            return None
+
+    def _coerce_company(self, data: dict[str, Any]) -> CompanyInfo | None:
+        """Coerce tolerant LLM company JSON into the strict CompanyInfo model."""
+        payload = {k: v for k, v in data.items() if k in CompanyInfo.model_fields}
+        try:
+            return CompanyInfo(**payload)
+        except ValidationError as exc:
+            self.logger.debug("Dropping invalid company entry: %s", exc)
+            return None
+
+    @staticmethod
+    def _as_bool(value: Any) -> bool:
+        """Parse common LLM boolean strings without raising model validation errors."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "yes", "y", "1", "open source", "open-source"}:
+                return True
+            if normalized in {"false", "no", "n", "0", "closed source", "proprietary"}:
+                return False
+            return False
+        return bool(value)
+
+    @staticmethod
+    def _as_str_list(value: Any) -> list[str]:
+        """Normalize scalar/list values into a list of strings."""
+        if isinstance(value, list):
+            return [str(item) for item in value if item is not None]
+        if isinstance(value, str) and value.strip():
+            return [value.strip()]
+        return []

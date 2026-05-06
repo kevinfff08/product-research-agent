@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime, timezone
 
 from src.agents.base import BaseAgent
 from src.llm.client import LLMClient
 from src.storage.local_store import LocalStore
-from src.apis.github_client import GitHubClient
+from src.apis.tavily_client import TavilyClient
 from src.models.plan import ResearchPath, SearchQuery
 from src.models.engineering import CodeAnalysis, DeploymentAssessment, EngineeringAnalysis
 from src.models.common import SourceReference, SourceType
 
 
 class EngineeringAnalyst(BaseAgent):
-    """Analyzes engineering feasibility: code quality, deployment readiness."""
+    """Analyzes engineering feasibility using web-discovered code sources."""
 
     agent_name = "engineering_analyst"
 
@@ -23,18 +24,18 @@ class EngineeringAnalyst(BaseAgent):
         self,
         llm: LLMClient,
         store: LocalStore,
-        github: GitHubClient,
+        code_search: TavilyClient,
         *,
-        max_code_queries: int = 8,
-        github_results_per_query: int = 10,
-        max_repo_analyses: int = 10,
-        api_concurrency: int = 5,
-        llm_concurrency: int = 3,
+        max_code_queries: int = 4,
+        code_results_per_query: int = 6,
+        max_repo_analyses: int = 6,
+        api_concurrency: int = 3,
+        llm_concurrency: int = 1,
     ):
         super().__init__(llm, store)
-        self.github = github
+        self.code_search = code_search
         self.max_code_queries = max_code_queries
-        self.github_results_per_query = github_results_per_query
+        self.code_results_per_query = code_results_per_query
         self.max_repo_analyses = max_repo_analyses
         self.api_concurrency = max(1, api_concurrency)
         self.llm_concurrency = max(1, llm_concurrency)
@@ -49,17 +50,12 @@ class EngineeringAnalyst(BaseAgent):
         self.logger.info("Engineering analysis for path: %s", path.title)
 
         c_queries = code_queries or [
-            SearchQuery(query=q, source="github", path_id=path.path_id)
+            SearchQuery(query=q, source="code_web", path_id=path.path_id)
             for q in path.search_queries.get("code", [])
         ]
 
-        # Search for repos
-        repos = await self._search_repos(c_queries)
-
-        # Analyze each repo deeply
-        code_analyses, sources = await self._analyze_repos(repos, path)
-
-        # Generate deployment assessment and recommendations via LLM
+        repos = await self._search_code_sources(c_queries)
+        code_analyses, sources = self._build_code_analyses(repos)
         deployment, recommendations, tech_stack = await self._assess_deployment(
             code_analyses, path,
         )
@@ -73,133 +69,118 @@ class EngineeringAnalyst(BaseAgent):
             sources=sources,
         )
         self.logger.info(
-            "Engineering analysis complete: %d repos analyzed",
+            "Engineering analysis complete: %d code sources analyzed",
             len(code_analyses),
         )
         return result
 
-    async def _search_repos(self, queries: list[SearchQuery]) -> list[dict]:
-        """Search GitHub for relevant repos."""
+    async def _search_code_sources(self, queries: list[SearchQuery]) -> list[dict]:
+        """Search code platforms through the general web search provider."""
         semaphore = asyncio.Semaphore(self.api_concurrency)
 
         async def search_one(sq: SearchQuery) -> list[dict]:
+            query = (
+                f"{sq.query} open source implementation repository "
+                f"site:github.com OR site:gitlab.com OR site:huggingface.co"
+            )
             async with semaphore:
                 try:
-                    return await self.github.search_repos(
-                        sq.query,
-                        limit=self.github_results_per_query,
+                    data = await self.code_search.search(
+                        query,
+                        search_depth="basic",
+                        max_results=self.code_results_per_query,
+                        include_answer=False,
                     )
                 except Exception as exc:
-                    self.logger.warning("GitHub search failed for '%s': %s", sq.query, exc)
+                    self.logger.warning("Code web search failed for '%s': %s", sq.query, exc)
                     return []
+            results = []
+            for item in data.get("results", []):
+                item["_query"] = sq.query
+                item["_intent"] = sq.intent
+                item["_source"] = "code_web"
+                results.append(item)
+            return results
 
         groups = await asyncio.gather(
             *(search_one(sq) for sq in queries[: self.max_code_queries]),
         )
-        all_repos = []
-        seen_urls = set()
+        all_results = []
+        seen_urls: set[str] = set()
         for group in groups:
-            for r in group:
-                url = r.get("html_url", "")
-                if url not in seen_urls:
+            for item in group:
+                url = item.get("url", "")
+                if url and url not in seen_urls:
                     seen_urls.add(url)
-                    all_repos.append(r)
-        return all_repos
+                    all_results.append(item)
+        return all_results[: self.max_repo_analyses]
 
-    async def _analyze_repos(
-        self, repos: list[dict], path: ResearchPath,
+    def _build_code_analyses(
+        self,
+        results: list[dict],
     ) -> tuple[list[CodeAnalysis], list[SourceReference]]:
-        """Deeply analyze repos for engineering quality."""
-        semaphore = asyncio.Semaphore(self.llm_concurrency)
-
-        async def analyze_one(repo_data: dict) -> tuple[CodeAnalysis | None, SourceReference | None]:
-            url = repo_data.get("html_url", "")
-            owner, name = GitHubClient.parse_repo_url(url)
-            if not owner:
-                return None, None
-
-            # Get README
-            try:
-                readme = await self.github.get_readme(owner, name)
-            except Exception:
-                readme = ""
-
-            # LLM analysis
-            async with semaphore:
-                llm_result = await self._call_llm_json_async(
-                    prompt=self._render_template(
-                        "analyze_repo",
-                        {
-                            "path_title": path.title,
-                            "repo_name": repo_data.get("full_name", f"{owner}/{name}"),
-                            "repo_url": url,
-                            "stars": repo_data.get("stargazers_count", 0),
-                            "forks": repo_data.get("forks_count", 0),
-                            "language": repo_data.get("language", ""),
-                            "license": (repo_data.get("license") or {}).get("spdx_id", ""),
-                            "description": repo_data.get("description", ""),
-                            "topics": ", ".join(repo_data.get("topics", [])),
-                            "updated_at": repo_data.get("updated_at", ""),
-                            "readme_excerpt": readme[:3000],
-                        },
-                    ),
-                    temperature=0.2,
-                )
-
-            code_analysis = CodeAnalysis(repo_url=url)
-            if llm_result and isinstance(llm_result, dict):
-                code_analysis.architecture_summary = llm_result.get("architecture_summary", "")
-                code_analysis.tech_stack = llm_result.get("tech_stack", [])
-                code_analysis.code_patterns = llm_result.get("code_quality_notes", "")
-                code_analysis.documentation_quality = llm_result.get("deployment_readiness", "")
-                code_analysis.api_design_notes = llm_result.get("community_health", "")
-                code_analysis.scalability_notes = "; ".join(llm_result.get("strengths", []))
-                code_analysis.test_coverage_notes = "; ".join(llm_result.get("weaknesses", []))
-
-            source = SourceReference(
+        """Convert search result snippets into lightweight code analyses."""
+        analyses: list[CodeAnalysis] = []
+        sources: list[SourceReference] = []
+        for item in results[: self.max_repo_analyses]:
+            url = item.get("url", "")
+            title = item.get("title", "")
+            content = item.get("content", "") or item.get("raw_content", "")
+            if not url:
+                continue
+            analyses.append(CodeAnalysis(
+                repo_url=url,
+                architecture_summary=content[:700],
+                tech_stack=self._guess_stack(" ".join([title, content, url])),
+                code_patterns=self._guess_code_host(url),
+                documentation_quality=content[:500],
+                api_design_notes=title,
+                scalability_notes=f"Discovered via query: {item.get('_query', '')}",
+            ))
+            sources.append(SourceReference(
                 url=url,
-                title=repo_data.get("full_name", ""),
+                title=title,
                 source_type=SourceType.REPO,
                 retrieved_at=datetime.now(timezone.utc).isoformat(),
-            )
-            return code_analysis, source
-
-        analyzed = await asyncio.gather(
-            *(analyze_one(repo) for repo in repos[: self.max_repo_analyses]),
-        )
-        analyses = [analysis for analysis, _ in analyzed if analysis is not None]
-        sources = [source for _, source in analyzed if source is not None]
+                relevance_score=float(item.get("score", 0.5) or 0.5),
+            ))
         return analyses, sources
 
     async def _assess_deployment(
-        self, code_analyses: list[CodeAnalysis], path: ResearchPath,
+        self,
+        code_analyses: list[CodeAnalysis],
+        path: ResearchPath,
     ) -> tuple[DeploymentAssessment, str, list[str]]:
-        """Use LLM to assess deployment readiness across all analyzed repos."""
+        """Use one LLM call to assess deployment readiness across all code sources."""
         if not code_analyses:
-            return DeploymentAssessment(), "", []
+            return DeploymentAssessment(approach=path.title), "", []
 
         repos_summary = "\n".join(
-            f"- {ca.repo_url}: stack={ca.tech_stack}, arch={ca.architecture_summary[:200]}"
-            for ca in code_analyses
+            f"- {ca.repo_url}: stack={ca.tech_stack}, notes={ca.architecture_summary[:350]}"
+            for ca in code_analyses[: self.max_repo_analyses]
         )
 
-        result = await self._call_llm_json_async(
-            prompt=(
-                f"Based on these repository analyses for '{path.title}':\n\n"
-                f"{repos_summary}\n\n"
-                f"Assess deployment feasibility. Return JSON:\n"
-                f'{{"deployment_complexity": "trivial|moderate|complex|very_complex", '
-                f'"infrastructure_requirements": ["req1"], '
-                f'"estimated_setup_effort": "description", '
-                f'"prerequisites": ["prereq1"], '
-                f'"risks": ["risk1"], '
-                f'"implementation_recommendations": "recommendations text", '
-                f'"technology_stack_recommendation": ["tech1"]}}'
-            ),
-            temperature=0.2,
-        )
+        try:
+            result = await self._call_llm_json_async(
+                prompt=(
+                    f"Based on these code/source analyses for '{path.title}':\n\n"
+                    f"{repos_summary}\n\n"
+                    f"Assess deployment feasibility. Return JSON:\n"
+                    f'{{"deployment_complexity": "trivial|moderate|complex|very_complex", '
+                    f'"infrastructure_requirements": ["req1"], '
+                    f'"estimated_setup_effort": "description", '
+                    f'"prerequisites": ["preq1"], '
+                    f'"risks": ["risk1"], '
+                    f'"implementation_recommendations": "recommendations text", '
+                    f'"technology_stack_recommendation": ["tech1"]}}'
+                ),
+                temperature=0.2,
+            )
+        except Exception as exc:
+            self.logger.warning("Deployment assessment failed for '%s': %s", path.title, exc)
+            return DeploymentAssessment(approach=path.title), "", []
 
-        deployment = DeploymentAssessment()
+        deployment = DeploymentAssessment(approach=path.title)
         recommendations = ""
         tech_stack: list[str] = []
 
@@ -216,3 +197,25 @@ class EngineeringAnalyst(BaseAgent):
             tech_stack = result.get("technology_stack_recommendation", [])
 
         return deployment, recommendations, tech_stack
+
+    @staticmethod
+    def _guess_code_host(url: str) -> str:
+        lowered = (url or "").lower()
+        if "github.com" in lowered:
+            return "GitHub"
+        if "gitlab.com" in lowered:
+            return "GitLab"
+        if "huggingface.co" in lowered:
+            return "Hugging Face"
+        return "Code or documentation source"
+
+    @staticmethod
+    def _guess_stack(text: str) -> list[str]:
+        candidates = [
+            "Python", "PyTorch", "TensorFlow", "ONNX", "CUDA", "TensorRT",
+            "FastAPI", "Docker", "WebSocket", "gRPC", "TypeScript", "Rust",
+            "C++", "Transformers", "Hugging Face",
+        ]
+        lowered = text.lower()
+        found = [name for name in candidates if re.search(rf"\b{re.escape(name.lower())}\b", lowered)]
+        return found[:8]
