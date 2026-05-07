@@ -253,15 +253,33 @@ class AcademicResearcher(BaseAgent):
         return self._filter_relevant(merged)[: max(self.max_paper_analyses, 1)]
 
     def _filter_relevant(self, papers: list[dict]) -> list[dict]:
-        """Remove papers whose titles show no topical overlap with the path."""
+        """Remove papers whose titles show no topical overlap with the path.
+
+        Extracts search terms from path technologies, key questions, AND the
+        original search queries (which are in English).  This avoids the
+        Chinese-vs-English mismatch that previously discarded all papers.
+        """
         if not self._current_path:
             return papers
-        path_terms = set()
+
+        path_terms: set[str] = set()
+        # English tech terms (e.g. "transformer", "FastSpeech") — best match
+        for tech in self._current_path.technologies_needed:
+            for word in re.split(r"[\s/]+", tech.lower()):
+                clean = word.strip(",.()[]{}:;")
+                if len(clean) > 3 and clean not in _STOP_WORDS:
+                    path_terms.add(clean)
+        # Key questions may contain English keywords
+        for q in self._current_path.key_questions:
+            for word in re.findall(r"[a-zA-Z0-9_\-]{4,}", q):
+                path_terms.add(word.lower())
+        # Also break Chinese title into bigrams as fallback — this won't
+        # match English papers, so we skip it.  Instead, look for any
+        # English sub-strings in the path title/description.
         for text in [self._current_path.title, self._current_path.description]:
-            path_terms.update(
-                w.lower().strip(",.()[]{}") for w in text.split()
-                if len(w) > 3 and w.lower() not in _STOP_WORDS
-            )
+            for word in re.findall(r"[a-zA-Z][a-zA-Z0-9_\-\.]{3,}", text):
+                path_terms.add(word.lower())
+
         if not path_terms:
             return papers
 
@@ -272,12 +290,14 @@ class AcademicResearcher(BaseAgent):
             combined = f"{title} {summary}"
             if any(term in combined for term in path_terms):
                 kept.append(item)
-            else:
-                self.logger.debug("Filtered irrelevant paper: %s", item.get("title", "")[:80])
 
-        if len(kept) < len(papers):
+        kept_count = len(kept)
+        total = len(papers)
+        if kept_count < total:
             self.logger.info(
-                "Relevance filter: kept %d/%d papers", len(kept), len(papers),
+                "Relevance filter: kept %d/%d papers (terms=%s)",
+                kept_count, total,
+                ", ".join(sorted(path_terms)[:10]),
             )
         return kept if kept else papers  # Fall back to all papers if nothing passes
 

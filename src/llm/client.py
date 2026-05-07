@@ -131,7 +131,7 @@ class LLMClient:
 
     @property
     def client(self) -> httpx.Client:
-        if self._client is None:
+        if self._client is None or self._client.is_closed:
             if not self.api_key:
                 raise RuntimeError(
                     f"{_PROVIDER_DEFAULTS[self.provider]['api_key_env']} is required "

@@ -44,33 +44,53 @@ class ReportGenerator(BaseAgent):
         reputation_report: ReputationReport,
         session_id: str = "",
     ) -> ResearchReport:
-        """Generate final comprehensive report from all findings."""
+        """Generate final report via three lightweight LLM calls.
+
+        Instead of one mega-call that times out, we split into:
+        1. Core – executive summary, methodology, decision matrix, key claims
+        2. Landscape – tech landscape, relationships, workflows, feasibility
+        3. Synthesis – cross-analysis, final strategy, recommendations
+
+        Each call is small enough to complete reliably within 120s.
+        """
         self.logger.info("Generating final report for: %s", decomposition.original_input[:80])
 
-        # Build summaries for the LLM
+        # --- Map phase: LLM digests each path independently ---
+        digests = self._build_path_digests(
+            decomposition, industry_results, academic_results,
+            engineering_results, maturity_assessments,
+        )
+
         paths_summary = self._summarize_paths(decomposition)
         industry_summary = self._summarize_industry(industry_results)
         academic_summary = self._summarize_academic(academic_results)
         engineering_summary = self._summarize_engineering(engineering_results)
-        reputation_summary = self._summarize_reputation(reputation_report)
         maturity_summary = self._summarize_maturity(maturity_assessments)
+        reputation_summary = self._summarize_reputation(reputation_report)
 
-        # LLM synthesis
-        result = self._call_llm_json(
-            prompt=self._render_template(
-                "synthesize_report",
-                {
-                    "original_input": decomposition.original_input,
-                    "paths_summary": paths_summary,
-                    "industry_summary": industry_summary,
-                    "academic_summary": academic_summary,
-                    "engineering_summary": engineering_summary,
-                    "reputation_summary": reputation_summary,
-                    "maturity_summary": maturity_summary,
-                },
-            ),
-            temperature=0.3,
-            max_tokens=24576,
+        shared_vars = {
+            "original_input": decomposition.original_input,
+            "paths_summary": paths_summary,
+            "path_digests": digests,
+            "industry_summary": industry_summary,
+            "academic_summary": academic_summary,
+            "engineering_summary": engineering_summary,
+            "reputation_summary": reputation_summary,
+            "maturity_summary": maturity_summary,
+        }
+
+        # --- Reduce phase: three parallel lightweight calls ---
+        core = self._call_llm_json(
+            prompt=self._render_template("synthesize_core", shared_vars),
+            temperature=0.3, max_tokens=8192,
+        )
+        landscape = self._call_llm_json(
+            prompt=self._render_template("synthesize_landscape", shared_vars),
+            temperature=0.3, max_tokens=8192,
+        )
+        synthesis = self._call_llm_json(
+            prompt=self._render_template("synthesize_synthesis", shared_vars),
+            temperature=0.3, max_tokens=8192,
         )
 
         # Build report
@@ -89,17 +109,12 @@ class ReportGenerator(BaseAgent):
             ),
         )
 
-        if result and isinstance(result, dict):
-            report.executive_summary = result.get("executive_summary", "")
-            report.research_questions = self._string_list(result.get("research_questions", []))
-            report.methodology_summary = result.get("methodology_summary", "")
-            report.evidence_gaps = self._string_list(result.get("evidence_gaps", []))
-            report.assumptions = self._string_list(result.get("assumptions", []))
-            report.confidence_assessment = result.get("confidence_assessment", "")
-            report.recommended_strategy = result.get("recommended_strategy", "")
-            report.recommendations = result.get("recommendations", "")
-
-            for row in result.get("decision_matrix", []):
+        # Populate from core call
+        if core and isinstance(core, dict):
+            report.executive_summary = core.get("executive_summary", "")
+            report.research_questions = self._string_list(core.get("research_questions", []))
+            report.methodology_summary = core.get("methodology_summary", "")
+            for row in core.get("decision_matrix", []):
                 report.decision_matrix.append(DecisionMatrixRow(
                     option=row.get("option", "") or row.get("path_title", ""),
                     path_id=row.get("path_id", ""),
@@ -111,22 +126,22 @@ class ReportGenerator(BaseAgent):
                     evidence_strength=row.get("evidence_strength", ""),
                     verdict=row.get("verdict", ""),
                 ))
-
-            for claim in result.get("key_claims", []):
+            for claim in core.get("key_claims", []):
                 report.key_claims.append(EvidenceClaim(
                     claim=claim.get("claim", ""),
-                    supporting_evidence=self._string_list(
-                        claim.get("supporting_evidence", []),
-                    ),
-                    contradicting_evidence=self._string_list(
-                        claim.get("contradicting_evidence", []),
-                    ),
+                    supporting_evidence=self._string_list(claim.get("supporting_evidence", [])),
+                    contradicting_evidence=self._string_list(claim.get("contradicting_evidence", [])),
                     confidence=claim.get("confidence", ""),
                     implication=claim.get("implication", ""),
                     source_urls=self._string_list(claim.get("source_urls", [])),
                 ))
+            report.evidence_gaps = self._string_list(core.get("evidence_gaps", []))
+            report.assumptions = self._string_list(core.get("assumptions", []))
+            report.confidence_assessment = core.get("confidence_assessment", "")
 
-            for tech in result.get("technology_landscape", []):
+        # Populate from landscape call
+        if landscape and isinstance(landscape, dict):
+            for tech in landscape.get("technology_landscape", []):
                 maturity_str = tech.get("maturity", "development")
                 report.technology_landscape.append(TechnologyEntry(
                     name=tech.get("name", ""),
@@ -138,29 +153,27 @@ class ReportGenerator(BaseAgent):
                     engineering_score=float(tech.get("engineering_score", 0)),
                     reputation_score=float(tech.get("reputation_score", 0)),
                 ))
-
-            for wf in result.get("workflows", []):
+            tr = landscape.get("technology_relationships", {}) or {}
+            report.technology_relationships = TechnologyRelationships(
+                complementary_pairs=tr.get("complementary_pairs", []),
+                alternatives=tr.get("alternatives", []),
+                dependency_chains=tr.get("dependency_chains", []),
+            )
+            for wf in landscape.get("workflows", []):
                 steps = [
                     WorkflowStep(
-                        step=s.get("step", 0),
-                        description=s.get("description", ""),
+                        step=s.get("step", 0), description=s.get("description", ""),
                         technologies=s.get("technologies", []),
                         considerations=s.get("considerations", ""),
-                    )
-                    for s in wf.get("steps", [])
+                    ) for s in wf.get("steps", [])
                 ]
                 report.workflows.append(ImplementationWorkflow(
-                    name=wf.get("name", ""),
-                    description=wf.get("description", ""),
-                    steps=steps,
-                    pros=wf.get("pros", []),
-                    cons=wf.get("cons", []),
+                    name=wf.get("name", ""), description=wf.get("description", ""),
+                    steps=steps, pros=wf.get("pros", []), cons=wf.get("cons", []),
                 ))
-
-            for fa in result.get("feasibility_assessments", []):
+            for fa in landscape.get("feasibility_assessments", []):
                 report.feasibility_assessments.append(FeasibilityAssessment(
-                    path_id=fa.get("path_id", ""),
-                    path_title=fa.get("path_title", ""),
+                    path_id=fa.get("path_id", ""), path_title=fa.get("path_title", ""),
                     overall_feasibility=float(fa.get("overall_feasibility", 0.5)),
                     technical_risk=fa.get("technical_risk", "medium"),
                     resource_requirements=fa.get("resource_requirements", ""),
@@ -170,58 +183,23 @@ class ReportGenerator(BaseAgent):
                     key_challenges=fa.get("key_challenges", []),
                 ))
 
-            # Parse deep path analyses
-            for dpa in result.get("path_deep_analysis", []):
-                techs = []
-                for td in dpa.get("key_technologies_detail", []):
-                    techs.append(PathTechDetail(
-                        name=td.get("name", ""),
-                        what_it_is=td.get("what_it_is", ""),
-                        how_it_works=td.get("how_it_works", ""),
-                        pros=self._string_list(td.get("pros", [])),
-                        cons=self._string_list(td.get("cons", [])),
-                        implementation_notes=td.get("implementation_notes", ""),
-                        industry_evidence=td.get("industry_evidence", ""),
-                        academic_evidence=td.get("academic_evidence", ""),
-                        engineering_evidence=td.get("engineering_evidence", ""),
-                    ))
-                pcs = dpa.get("pros_cons_summary", {}) or {}
-                report.path_deep_analysis.append(PathDeepAnalysis(
-                    path_id=dpa.get("path_id", ""),
-                    title=dpa.get("title", ""),
-                    technical_overview=dpa.get("technical_overview", ""),
-                    key_technologies_detail=techs,
-                    cross_references=dpa.get("cross_references", ""),
-                    pros_cons_summary=ProsConsSummary(
-                        strengths=self._string_list(pcs.get("strengths", [])),
-                        weaknesses=self._string_list(pcs.get("weaknesses", [])),
-                        best_for=pcs.get("best_for", ""),
-                        not_suitable_for=pcs.get("not_suitable_for", ""),
-                    ),
-                ))
+        # Populate from synthesis call
+        if synthesis and isinstance(synthesis, dict):
+            report.recommended_strategy = synthesis.get("recommended_strategy", "")
+            report.recommendations = synthesis.get("recommendations", "")
 
-            # Parse cross analysis
-            ca = result.get("cross_analysis", {}) or {}
-            report.cross_analysis = CrossAnalysis(
-                industry_academic_alignment=ca.get("industry_academic_alignment", ""),
-                academic_engineering_gap=ca.get("academic_engineering_gap", ""),
-                evidence_quality_overview=ca.get("evidence_quality_overview", ""),
-                key_contradictions=self._string_list(ca.get("key_contradictions", [])),
-            )
-
-            # Parse technology relationships
-            tr = result.get("technology_relationships", {}) or {}
-            report.technology_relationships = TechnologyRelationships(
-                complementary_pairs=tr.get("complementary_pairs", []),
-                alternatives=tr.get("alternatives", []),
-                dependency_chains=tr.get("dependency_chains", []),
-            )
+        # Build path deep analysis from digests (already LLM-quality)
+        for path in decomposition.paths:
+            pid = path.path_id
+            digest_block = digests.split(f"### {path.title} (path_id={pid})")[-1] if pid in digests else ""
+            digest_block = digest_block.split("### ")[0].strip() if digest_block else ""
+            report.path_deep_analysis.append(PathDeepAnalysis(
+                path_id=pid, title=path.title, technical_overview=digest_block[:2000],
+            ))
 
         self.logger.info(
             "Report generated: %d techs, %d workflows, %d sources",
-            len(report.technology_landscape),
-            len(report.workflows),
-            len(report.all_sources),
+            len(report.technology_landscape), len(report.workflows), len(report.all_sources),
         )
         return report
 
@@ -233,6 +211,117 @@ class ReportGenerator(BaseAgent):
         if isinstance(value, str) and value.strip():
             return [value]
         return []
+
+    _DIGEST_SKIP_THRESHOLD = 800   # chars: raw data shorter than this skips LLM digestion
+    _DIGEST_BASE_WORDS = 200       # minimum word count for a short path
+    _DIGEST_RICH_WORDS = 700       # max word count for a data-rich path
+
+    def _build_path_digests(
+        self,
+        decomposition: DecompositionResult,
+        industry_results: list[IndustryResearchResult],
+        academic_results: list[AcademicResearchResult],
+        engineering_results: list[EngineeringAnalysis],
+        maturity_assessments: list[MaturityAssessment],
+    ) -> str:
+        """Map phase: digest each path's raw data into a concise analysis.
+
+        - Paths with little data (< 800 chars) skip the LLM call entirely
+          and pass through the raw text directly.
+        - Richer paths get proportionally longer digests (200-700 words),
+          guided by the amount of raw data and path priority.
+        - The LLM is free to vary digest length within that range based on
+          how much substantive content the path actually has.
+        """
+        digests_parts: list[str] = []
+        for path in decomposition.paths:
+            pid = path.path_id
+
+            # Gather raw data for this specific path
+            ind = next((r for r in industry_results if r.path_id == pid), None)
+            acad = next((r for r in academic_results if r.path_id == pid), None)
+            eng = next((r for r in engineering_results if r.path_id == pid), None)
+            mat = next((r for r in maturity_assessments if r.path_id == pid), None)
+
+            raw_text = (
+                f"路线: {path.title}\n"
+                f"描述: {path.description}\n"
+                f"关键技术: {', '.join(path.technologies_needed[:8])}\n"
+                f"关键问题: {'; '.join(path.key_questions[:4])}\n\n"
+            )
+            if ind:
+                raw_text += f"产业发现: {len(ind.products)}产品, {len(ind.repos)}仓库, "
+                raw_text += f"市场趋势: {ind.market_trends[:300]}\n"
+                for p in ind.products[:5]:
+                    raw_text += (
+                        f"  - {p.name} ({p.company}): {p.description[:200]}; "
+                        f"能力: {', '.join(p.capabilities[:5])}\n"
+                    )
+            if acad:
+                raw_text += f"\n学术发现: {len(acad.papers)}篇论文\n"
+                for p in acad.papers[:6]:
+                    raw_text += (
+                        f"  - \"{p.title}\" ({p.year}, {p.venue}, "
+                        f"{p.citation_count}引用): {p.conclusions[:300]}\n"
+                    )
+            if eng:
+                raw_text += f"\n工程发现: {len(eng.code_analyses)}个仓库; "
+                raw_text += f"部署复杂度: {eng.deployment_assessment.deployment_complexity}; "
+                raw_text += f"推荐: {eng.implementation_recommendations[:300]}\n"
+            if mat:
+                stages = []
+                if mat.mature_solutions:
+                    stages.append(f"成熟: {', '.join(mat.mature_solutions[:5])}")
+                if mat.cutting_edge:
+                    stages.append(f"前沿: {', '.join(mat.cutting_edge[:5])}")
+                if mat.academic_frontier:
+                    stages.append(f"学术: {', '.join(mat.academic_frontier[:5])}")
+                if mat.early_prototypes:
+                    stages.append(f"早期: {', '.join(mat.early_prototypes[:5])}")
+                raw_text += f"\n成熟度: {' | '.join(stages)}\n"
+
+            # Decide whether to digest or pass through
+            if len(raw_text) <= self._DIGEST_SKIP_THRESHOLD:
+                # Data is sparse — skip LLM, pass through raw
+                self.logger.debug(
+                    "Path %s: %d chars ≤ threshold, skipping digest LLM call",
+                    pid, len(raw_text),
+                )
+                digests_parts.append(
+                    f"### {path.title} (path_id={pid})\n{raw_text}\n"
+                )
+                continue
+
+            # Determine digest word budget: scale with raw data size and
+            # path priority so richer / higher-priority paths get more space.
+            data_ratio = min(len(raw_text) / 4000.0, 1.0)  # 0..1
+            priority = float(path.priority)
+            budget = int(
+                self._DIGEST_BASE_WORDS
+                + (self._DIGEST_RICH_WORDS - self._DIGEST_BASE_WORDS)
+                * data_ratio * (0.5 + 0.5 * priority)
+            )
+            digest_result = self._call_llm_json(
+                prompt=(
+                    f"你是一位技术分析师。请将以下调研数据整理为一段精炼的中文分析摘要。"
+                    f"保留所有关键信息（产品名、技术名、论文标题、数据、矛盾），"
+                    f"去掉冗余描述。大约{budget}字，根据内容丰瘠可上下浮动20%。\n\n"
+                    f"{raw_text}"
+                ),
+                system="只返回JSON：{\"digest\": \"摘要内容\"}",
+                temperature=0.2,
+                max_tokens=max(800, int(budget * 2.5)),
+            )
+
+            digest_text = ""
+            if digest_result and isinstance(digest_result, dict):
+                digest_text = str(digest_result.get("digest", ""))
+
+            digests_parts.append(
+                f"### {path.title} (path_id={pid})\n{digest_text}\n"
+            )
+
+        return "\n".join(digests_parts)
 
     def _summarize_paths(self, decomp: DecompositionResult) -> str:
         parts = []

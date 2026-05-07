@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -15,12 +16,18 @@ logger = get_logger("apis.arxiv")
 
 ARXIV_NS = {"atom": "http://www.w3.org/2005/Atom"}
 
+# arXiv rate limit: no more than 1 request per 3 seconds for sustained use.
+# We add jitter to avoid synchronisation with server-side rate windows.
+_MIN_INTERVAL = 5.0
+_MAX_JITTER = 2.0
+
 
 class ArxivClient:
     """Client for arXiv API - preprint paper search.
 
-    Not extending BaseAPIClient because arXiv uses XML, not JSON.
-    Includes rate limiting to respect arXiv's API guidelines.
+    Uses an asyncio.Lock + mandatory delay to serialize all requests.
+    This is essential because multiple research paths launch concurrent
+    queries that would otherwise hit arXiv simultaneously and cause 429s.
     """
 
     BASE_URL = "https://export.arxiv.org/api/query"
@@ -29,7 +36,10 @@ class ArxivClient:
     def __init__(self):
         self._client: httpx.AsyncClient | None = None
         self._last_request_time: float = 0.0
-        self._min_interval: float = 1.0  # 1 second between requests (arXiv guideline: <1 req/sec)
+        self._rate_lock = asyncio.Lock()
+        # Pre-mark as if a request just happened, so the very first call
+        # also waits.  This prevents the initial burst problem.
+        self._last_request_time = time.monotonic()
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -47,14 +57,7 @@ class ArxivClient:
         sort_by: str = "relevance",
         sort_order: str = "descending",
     ) -> list[dict]:
-        """Search arXiv papers.
-
-        Args:
-            query: Search query (supports arXiv query syntax).
-            max_results: Max results to return.
-            sort_by: "relevance", "lastUpdatedDate", or "submittedDate".
-            sort_order: "ascending" or "descending".
-        """
+        """Search arXiv papers.  Serialises all callers through a lock."""
         params = {
             "search_query": f"all:{query}",
             "max_results": min(max_results, 50),
@@ -62,16 +65,29 @@ class ArxivClient:
             "sortOrder": sort_order,
         }
 
-        # Rate limiting: arXiv allows ~1 request per second
-        elapsed_since_last = time.monotonic() - self._last_request_time
-        if elapsed_since_last < self._min_interval:
-            await asyncio.sleep(self._min_interval - elapsed_since_last)
+        for attempt in range(3):
+            async with self._rate_lock:
+                gap = time.monotonic() - self._last_request_time
+                needed = _MIN_INTERVAL + random.uniform(0, _MAX_JITTER)
+                if gap < needed:
+                    await asyncio.sleep(needed - gap)
 
-        logger.info("arXiv search: query=%s, max=%d", query, max_results)
-        client = await self._get_client()
-        response = await client.get(self.BASE_URL, params=params)
-        self._last_request_time = time.monotonic()
-        response.raise_for_status()
+                logger.info("arXiv search: query=%s, max=%d", query, max_results)
+                client = await self._get_client()
+                response = await client.get(self.BASE_URL, params=params)
+                self._last_request_time = time.monotonic()
+
+            if response.status_code == 429:
+                wait = 10.0 * (attempt + 1) + random.uniform(0, 5)
+                logger.warning(
+                    "arXiv 429 on attempt %d/3 for '%s', waiting %.0fs...",
+                    attempt + 1, query[:60], wait,
+                )
+                await asyncio.sleep(wait)
+                continue
+            if response.status_code >= 400:
+                response.raise_for_status()
+            break
 
         papers = self._parse_response(response.text)
         logger.info("arXiv returned %d papers for: %s", len(papers), query)

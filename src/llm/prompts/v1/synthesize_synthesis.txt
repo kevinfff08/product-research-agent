@@ -1,0 +1,31 @@
+你是一位技术决策顾问。基于完整的调研数据，撰写最终的战略建议。
+
+## 原始创意
+{original_input}
+
+## 各路线精炼摘要
+{path_digests}
+
+## 产业数据
+{industry_summary}
+
+## 学术数据
+{academic_summary}
+
+## 声誉
+{reputation_summary}
+
+## 成熟度
+{maturity_summary}
+
+## 要求
+- 推荐策略300字以上：短期/中期/长期分别做什么、为什么
+- 明确标注构建/购买/复用/观望的建议
+- 每步建议附依据
+- 所有中文输出
+
+返回JSON：
+{{
+    "recommended_strategy": "300字以上的分阶段策略",
+    "recommendations": "最终建议总结"
+}}

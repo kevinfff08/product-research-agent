@@ -1,0 +1,61 @@
+你是一位资深技术战略师。基于所有调研数据，撰写报告的核心章节。
+
+## 原始产品创意
+{original_input}
+
+## 研究路线总览
+{paths_summary}
+
+## 各路线精炼摘要
+{path_digests}
+
+## 产业补充数据
+{industry_summary}
+
+## 学术补充数据
+{academic_summary}
+
+## 声誉分析
+{reputation_summary}
+
+## 成熟度
+{maturity_summary}
+
+## 要求
+- 摘要3-4段：产品核心挑战、主要发现、关键风险、明确推荐策略
+- 决策矩阵每行必须包含详细的中文理由
+- 每个论断必须标注置信度（high/medium/low）和证据来源
+- 所有中文输出
+
+返回JSON：
+{{
+    "executive_summary": "3-4段",
+    "research_questions": ["问题1"],
+    "methodology_summary": "方法说明",
+    "decision_matrix": [
+        {{
+            "option": "路线名",
+            "path_id": "p1",
+            "user_value": "评级及详细理由",
+            "technical_feasibility": "评级及详细理由",
+            "maturity": "评级及详细理由",
+            "ecosystem_strength": "评级及详细理由",
+            "cost_risk": "评级及详细理由",
+            "evidence_strength": "评级及详细理由",
+            "verdict": "recommended|promising|watch|avoid及详细理由"
+        }}
+    ],
+    "key_claims": [
+        {{
+            "claim": "论断",
+            "supporting_evidence": ["证据"],
+            "contradicting_evidence": ["反面"],
+            "confidence": "high|medium|low",
+            "implication": "对决策的意义",
+            "source_urls": ["url"]
+        }}
+    ],
+    "evidence_gaps": ["缺口"],
+    "assumptions": ["假设"],
+    "confidence_assessment": "整体置信度评估"
+}}

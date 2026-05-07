@@ -6,7 +6,10 @@
 ## 已探索的研究路线
 {paths_summary}
 
-## 产业调研摘要
+## 各路线调研数据摘要（LLM精炼，信息密集）
+{path_digests}
+
+## 产业调研补充数据
 {industry_summary}
 
 ## 学术调研摘要

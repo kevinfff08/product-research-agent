@@ -1,0 +1,79 @@
+你是一位技术全景分析师。基于调研数据，生成技术全景、关系图谱、实施工作流和可行性评估。
+
+## 原始创意
+{original_input}
+
+## 各路线精炼摘要
+{path_digests}
+
+## 产业补充
+{industry_summary}
+
+## 学术补充
+{academic_summary}
+
+## 工程补充
+{engineering_summary}
+
+## 声誉
+{reputation_summary}
+
+## 成熟度
+{maturity_summary}
+
+## 要求
+- 每项技术描述100字以上（是什么/优劣/适用场景）
+- 技术关系图谱包含互补、替代、依赖三类
+- 工作流每步含详细说明和技术选型
+- 可行性评估含详细理由和风险
+- 所有中文输出
+
+返回JSON：
+{{
+    "technology_landscape": [
+        {{
+            "name": "技术名",
+            "category": "full_stack|frontend|backend|ml|infra|data|devops",
+            "maturity": "early_prototype|development|mature|cutting_edge|academic_frontier",
+            "description": "100字以上分析",
+            "industry_score": 0.8,
+            "academic_score": 0.7,
+            "engineering_score": 0.9,
+            "reputation_score": 0.85
+        }}
+    ],
+    "technology_relationships": {{
+        "complementary_pairs": [["技术A", "技术B", "互补说明"]],
+        "alternatives": [["技术C", "技术D", "替代说明"]],
+        "dependency_chains": [["基础技术", "依赖技术", "依赖说明"]]
+    }},
+    "workflows": [
+        {{
+            "name": "工作流名",
+            "description": "概述",
+            "steps": [
+                {{
+                    "step": 1,
+                    "description": "详细步骤说明",
+                    "technologies": ["工具"],
+                    "considerations": "注意事项"
+                }}
+            ],
+            "pros": ["优点"],
+            "cons": ["缺点"]
+        }}
+    ],
+    "feasibility_assessments": [
+        {{
+            "path_id": "p1",
+            "path_title": "路线名",
+            "overall_feasibility": 0.75,
+            "technical_risk": "low|medium|high|very_high",
+            "resource_requirements": "资源需求",
+            "time_estimate": "时间估算",
+            "recommended": true,
+            "rationale": "详细理由",
+            "key_challenges": ["挑战"]
+        }}
+    ]
+}}

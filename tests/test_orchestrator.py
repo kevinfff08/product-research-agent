@@ -112,12 +112,23 @@ async def test_run_full_pipeline(orchestrator):
             "technology_scores": [], "summary": "No data.",
         }),
         # Maturity: skipped (no technologies found, returns early)
-        # 4. Report synthesis
+        # Path digest: skipped (raw data < 800 chars, passes through directly)
+        # 4. Report core
         json.dumps({
             "executive_summary": "A test report.",
+            "decision_matrix": [],
+            "key_claims": [],
+        }),
+        # 5. Report landscape
+        json.dumps({
             "technology_landscape": [],
+            "technology_relationships": {},
             "workflows": [],
             "feasibility_assessments": [],
+        }),
+        # 6. Report synthesis
+        json.dumps({
+            "recommended_strategy": "Build iteratively.",
             "recommendations": "Start simple.",
         }),
     ]
