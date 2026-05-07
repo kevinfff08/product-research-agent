@@ -56,11 +56,12 @@ api:
     rate_limit_rps: 0.3
     max_results: 20
   web_scraper:
-    timeout: 30
-    max_content_length: 50000
+    timeout: 60
+    max_content_length: 80000
 
 llm:
   default_max_tokens: 16384
+  request_timeout: 300
   decompose_temperature: 0.5
   analysis_temperature: 0.2
   synthesis_temperature: 0.3

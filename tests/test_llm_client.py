@@ -128,6 +128,7 @@ def test_api_key_mode_uses_deepseek_defaults():
         {
             "LLM_MODE": "api-key",
             "LLM_PROVIDER": "deepseek",
+            "LLM_MODEL": "",
             "DEEPSEEK_API_KEY": "ds-test",
         },
     ):

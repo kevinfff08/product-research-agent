@@ -46,6 +46,10 @@ _ROUTING_ERROR_MARKERS = (
     "invalid model",
     "model does not exist",
 )
+_RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+_RETRY_MAX_ATTEMPTS = 3
+_RETRY_BASE_DELAY = 2.0
+_RETRY_MAX_DELAY = 30.0
 
 
 class LLMClient:
@@ -62,7 +66,7 @@ class LLMClient:
         model: str | None = None,
         max_tokens: int = 8192,
         base_url: str | None = None,
-        timeout: float = 120.0,
+        timeout: float = 300.0,
     ) -> None:
         self.provider = os.environ.get("LLM_PROVIDER", "openai").strip().lower()
         if self.provider not in _PROVIDER_DEFAULTS:
@@ -169,7 +173,11 @@ class LLMClient:
         temperature: float = 0.3,
         max_tokens: int | None = None,
     ) -> str:
-        """Generate text from a prompt via chat completions."""
+        """Generate text from a prompt via chat completions.
+
+        Retries on timeouts, connection errors, and transient server errors
+        (HTTP 429/5xx) with exponential backoff.
+        """
         tokens = max_tokens or self.max_tokens
         prompt_preview = prompt[:120].replace("\n", " ")
         logger.info(
@@ -192,26 +200,56 @@ class LLMClient:
             "max_tokens": tokens,
         }
 
+        last_exc: Exception | None = None
         t0 = time.perf_counter()
-        try:
-            response = self.client.post("/chat/completions", json=payload)
-            elapsed = time.perf_counter() - t0
-            if response.status_code >= 400:
-                self._raise_api_error(response, elapsed)
-            data = response.json()
-            text = self._extract_message_text(data)
-            usage = data.get("usage") or {}
-            logger.info(
-                "LLM response: %.1fs, input_tokens=%s, output_tokens=%s",
-                elapsed,
-                usage.get("prompt_tokens", "?"),
-                usage.get("completion_tokens", "?"),
-            )
-            return text
-        except Exception as exc:
-            elapsed = time.perf_counter() - t0
-            logger.error("LLM request failed after %.1fs: %s", elapsed, exc)
-            raise
+        for attempt in range(1, _RETRY_MAX_ATTEMPTS + 1):
+            try:
+                response = self.client.post("/chat/completions", json=payload)
+                elapsed = time.perf_counter() - t0
+                if response.status_code in _RETRYABLE_STATUS_CODES and attempt < _RETRY_MAX_ATTEMPTS:
+                    delay = min(_RETRY_BASE_DELAY * (2 ** (attempt - 1)), _RETRY_MAX_DELAY)
+                    logger.warning(
+                        "LLM HTTP %d on attempt %d/%d, retrying in %.1fs...",
+                        response.status_code, attempt, _RETRY_MAX_ATTEMPTS, delay,
+                    )
+                    time.sleep(delay)
+                    t0 = time.perf_counter()
+                    continue
+                if response.status_code >= 400:
+                    self._raise_api_error(response, elapsed)
+                data = response.json()
+                text = self._extract_message_text(data)
+                usage = data.get("usage") or {}
+                logger.info(
+                    "LLM response: %.1fs, input_tokens=%s, output_tokens=%s",
+                    elapsed,
+                    usage.get("prompt_tokens", "?"),
+                    usage.get("completion_tokens", "?"),
+                )
+                return text
+            except (httpx.ReadTimeout, httpx.ConnectError,
+                    httpx.RemoteProtocolError, httpx.ReadError) as exc:
+                last_exc = exc
+                elapsed = time.perf_counter() - t0
+                if attempt < _RETRY_MAX_ATTEMPTS:
+                    delay = min(_RETRY_BASE_DELAY * (2 ** (attempt - 1)), _RETRY_MAX_DELAY)
+                    logger.warning(
+                        "LLM %s on attempt %d/%d after %.1fs, retrying in %.1fs...",
+                        type(exc).__name__, attempt, _RETRY_MAX_ATTEMPTS, elapsed, delay,
+                    )
+                    time.sleep(delay)
+                    t0 = time.perf_counter()
+                    continue
+                logger.error("LLM request failed after %d attempts (%.1fs): %s",
+                             _RETRY_MAX_ATTEMPTS, elapsed, exc)
+                raise
+            except Exception as exc:
+                elapsed = time.perf_counter() - t0
+                logger.error("LLM request failed after %.1fs: %s", elapsed, exc)
+                raise
+
+        assert last_exc is not None
+        raise last_exc
 
     def _raise_api_error(self, response: httpx.Response, elapsed: float) -> None:
         """Raise a clear error for API failures, especially model routing issues."""
