@@ -79,37 +79,31 @@ pip install -e ".[docx]"
 
 ## 环境配置
 
-复制环境变量模板：
+复制并编辑配置：
 
 ```bash
 cp .env.example .env
+# 编辑 .env，填入你的 LLM 提供商和 API 密钥
 ```
 
-LLM 调用由两个变量共同决定：
+只需配置三处即可运行：
 
-| 变量 | 可选值 | 说明 |
+| 变量 | 说明 |
+| --- | --- |
+| `LLM_PROVIDER` | 选择 LLM 提供商：`openai` / `deepseek` / `google` |
+| `<PROVIDER>_API_KEY` | 对应的 API 密钥，如 `DEEPSEEK_API_KEY` |
+| `TAVILY_API_KEY` | 网页搜索密钥（注册地址：tavily.com） |
+
+可选配置：
+
+| 变量 | 说明 | 默认值 |
 | --- | --- | --- |
-| `LLM_MODE` | `setup-token` / `api-key` | `setup-token` 走 CLIProxyAPI；`api-key` 直连 Provider |
-| `LLM_PROVIDER` | `openai` / `deepseek` / `google` | 选择直连 Provider，也用于默认模型选择 |
-| `LLM_MODEL` | 任意可用模型名 | `setup-token` 和 OpenAI 直连使用；必须与代理或 Provider 暴露的模型一致 |
-| `DEEPSEEK_MODEL` / `GOOGLE_MODEL` | 任意可用模型名 | DeepSeek / Google 直连的可选模型覆盖 |
-| `LLM_PROXY_URL` | URL | CLIProxyAPI 地址，默认 `http://localhost:8317` |
+| `LLM_MODEL` | 自定义模型名 | openai: `gpt-5.4` / deepseek: `deepseek-v4-flash` / google: `gemini-2.5-flash` |
+| `<PROVIDER>_BASE_URL` | 自定义 API 地址 | openai: `api.openai.com/v1` / deepseek: `api.deepseek.com` / google: `generativelanguage.googleapis.com/v1beta/openai` |
+| `LLM_MODE` | 认证模式：`api-key` 直连 / `setup-token` CLIProxyAPI | `api-key` |
+| `LLM_PROXY_URL` | CLIProxyAPI 地址（仅 setup-token） | `http://localhost:8317` |
 
-Provider Key：
-
-| Provider | 必填 Key | 可选 Base URL |
-| --- | --- | --- |
-| OpenAI | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
-| DeepSeek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
-| Google Gemini OpenAI-compatible | `GOOGLE_API_KEY` | `GOOGLE_BASE_URL` |
-
-外部搜索 Key：
-
-| 变量 | 是否必需 | 说明 |
-| --- | --- | --- |
-| `TAVILY_API_KEY` | 推荐 | 产品、网页论文线索、开源实现和社区资料搜索 |
-
-不要把真实密钥写入 `config/default.yaml` 或文档。密钥只放在 `.env` 或系统环境变量中。
+所有密钥只放在 `.env` 中，不要写入代码或 `config/default.yaml`。
 
 ## 调研流水线
 

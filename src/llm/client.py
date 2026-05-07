@@ -120,13 +120,10 @@ class LLMClient:
         return normalized
 
     def _default_model_for_mode(self) -> str:
-        """Pick a default model without cross-provider env leakage."""
+        """Pick a default model. LLM_MODEL overrides the provider default."""
         provider_config = _PROVIDER_DEFAULTS[self.provider]
         default_model = str(provider_config["model"])
-        if self.mode == "setup-token" or self.provider == "openai":
-            return os.environ.get("LLM_MODEL", default_model)
-        provider_model_env = f"{self.provider.upper()}_MODEL"
-        return os.environ.get(provider_model_env, default_model)
+        return os.environ.get("LLM_MODEL") or default_model
 
     @property
     def client(self) -> httpx.Client:

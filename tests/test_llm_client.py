@@ -144,6 +144,7 @@ def test_api_key_mode_uses_google_openai_compatible_base_url():
         {
             "LLM_MODE": "api-key",
             "LLM_PROVIDER": "google",
+            "LLM_MODEL": "",
             "GOOGLE_API_KEY": "google-test",
         },
     ):
