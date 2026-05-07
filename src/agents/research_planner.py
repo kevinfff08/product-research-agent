@@ -48,8 +48,8 @@ class ResearchPlanner(BaseAgent):
         result = self._call_llm_json(
             prompt=self._build_prompt(decomposition, decomposition_json, weights),
             system=(
-                "You are a research planning expert. Generate targeted search queries "
-                "for multiple data sources to cover a product/technology landscape."
+                "你是一位研究规划专家。为多个数据源生成有针对性的搜索查询，"
+                "以覆盖产品/技术全景。搜索查询使用英文以获得最佳结果。"
             ),
             temperature=0.3,
         )

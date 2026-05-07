@@ -28,8 +28,8 @@ class IdeaDecomposer(BaseAgent):
         result = self._call_llm_json(
             prompt=self._build_prompt(raw_input),
             system=(
-                "You are an expert product strategist and technology analyst. "
-                "Analyze product ideas and decompose them into concrete research paths."
+                "你是一位资深产品策略师和技术分析师。"
+                "分析产品创意并将其拆解为具体的研究路线。所有文本内容必须使用中文输出。"
             ),
             temperature=0.5,  # More creative for brainstorming
         )

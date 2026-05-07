@@ -69,7 +69,9 @@ def _run_research_request(
         border_style="green",
     ))
 
-    output_paths = orchestrator.output_paths or [Path(output_dir) / f"{report.session_id}.md"]
+    output_paths = orchestrator.output_paths or [
+        Path(output_dir) / report.session_id / f"{report.session_id}.md"
+    ]
     console.print("\nReports saved to:")
     for output_path in output_paths:
         console.print(f"  [bold]{output_path}[/bold]")

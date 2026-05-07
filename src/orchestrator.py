@@ -408,20 +408,23 @@ class Orchestrator:
         return path.path_id, normalized[0], normalized[1], normalized[2]
 
     def _write_outputs(self, report: ResearchReport, output_format: str) -> list[Path]:
-        """Write report outputs in the requested format."""
+        """Write report outputs in per-run subdirectories matching the log naming convention."""
         normalized = output_format.strip().lower()
         if normalized not in {"markdown", "docx", "both"}:
             raise ValueError(
                 "Unsupported output format. Expected one of: markdown, docx, both"
             )
 
+        run_dir = self.output_dir / report.session_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+
         paths: list[Path] = []
         if normalized in {"markdown", "both"}:
-            markdown_path = self.output_dir / f"{report.session_id}.md"
+            markdown_path = run_dir / f"{report.session_id}.md"
             paths.append(self.markdown_reporter.generate(report, markdown_path))
 
         if normalized in {"docx", "both"}:
-            docx_path = self.output_dir / f"{report.session_id}.docx"
+            docx_path = run_dir / f"{report.session_id}.docx"
             paths.append(self.docx_reporter.generate(report, docx_path))
 
         self.output_paths = paths

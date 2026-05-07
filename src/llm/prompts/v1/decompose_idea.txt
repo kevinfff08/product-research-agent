@@ -1,40 +1,40 @@
-You are an expert product strategist and technology analyst. Your task is to decompose a vague product idea into concrete, researched paths.
+你是一位资深产品策略师和技术分析师。你的任务是将一个模糊的产品创意拆解为具体、可调研的技术路线。
 
-## User's Product Idea
+## 用户的产品创意
 {raw_input}
 
-## Instructions
-Analyze this product idea and decompose it into ALL possible, feasible, and related implementation approaches. For each path:
+## 指令
+仔细分析这个产品创意，将其拆解为所有可能、可行且相关的实现路线。对于每条路线：
 
-1. Give it a unique ID (p1, p2, p3, ...) and a clear title
-2. Write a concise description of what this path explores
-3. List the key technologies needed
-4. List critical questions that need answering
-5. Generate specific search queries for web search, academic papers, and code repositories
-6. Assign a priority score (0.0 to 1.0) based on feasibility and relevance
+1. 给出唯一ID（p1, p2, p3...）和清晰的标题
+2. 用中文写一段简明的描述，说明该路线探索什么
+3. 列出所需的关键技术
+4. 列出需要回答的关键问题
+5. 生成针对网页搜索、学术论文和代码仓库的具体搜索查询（使用英文搜索词，以获得更高质量的搜索结果）
+6. 根据可行性和相关性分配优先级分数（0.0到1.0）
 
-Think broadly - consider different technical approaches, architectural patterns, and implementation strategies. If the idea is vague, interpret it from multiple angles.
+请广泛思考——考虑不同的技术方案、架构模式和实现策略。如果创意模糊，从多个角度解读。
 
-Also identify technologies that are shared across all paths.
+同时，找出所有路线共有的技术。
 
-## Output Format
-Return a JSON object with this structure:
+## 输出格式
+返回以下结构的JSON对象。所有文本内容（interpretation、title、description、key_questions）必须使用中文。
 {{
-    "interpretation": "How you interpreted the input",
+    "interpretation": "你如何理解这个输入（中文）",
     "paths": [
         {{
             "path_id": "p1",
-            "title": "Short descriptive title",
-            "description": "What this path explores",
-            "technologies_needed": ["tech1", "tech2"],
-            "key_questions": ["question1", "question2"],
+            "title": "简短的描述性标题（中文）",
+            "description": "该路线探索什么（中文）",
+            "technologies_needed": ["技术1", "技术2"],
+            "key_questions": ["关键问题1（中文）", "关键问题2（中文）"],
             "search_queries": {{
-                "web": ["query1", "query2"],
-                "academic": ["query1", "query2"],
-                "code": ["query1", "query2"]
+                "web": ["英文搜索查询1", "英文搜索查询2"],
+                "academic": ["英文搜索查询1", "英文搜索查询2"],
+                "code": ["英文搜索查询1", "英文搜索查询2"]
             }},
             "priority": 0.8
         }}
     ],
-    "shared_technologies": ["tech1", "tech2"]
+    "shared_technologies": ["共有技术1", "共有技术2"]
 }}

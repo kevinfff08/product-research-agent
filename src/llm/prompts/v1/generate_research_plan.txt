@@ -1,39 +1,39 @@
-You are a research planning expert. Given the decomposition of a product idea into research paths, generate a structured research plan with specific search queries for each data source.
+你是一位研究规划专家。根据产品创意的拆解结果，为每个数据源生成结构化的搜索查询计划。
 
-## Original Input
+## 原始输入
 {original_input}
 
-## Decomposition
+## 拆解结果
 {decomposition_json}
 
-## Research Weights
-- Industry research: {weight_industry}
-- Academic research: {weight_academic}
-- Community research: {weight_community}
+## 研究权重
+- 产业调研：{weight_industry}
+- 学术调研：{weight_academic}
+- 社区调研：{weight_community}
 
-## Instructions
-For each research path, generate specific, targeted search queries for each source:
-- **tavily**: Web search queries for products, companies, blog posts, documentation
-- **academic_web**: Academic web search queries for papers, benchmarks, proceedings, model cards, and Papers with Code pages
-- **code_web**: Web search queries for open-source implementations across GitHub, GitLab, Hugging Face, Sourcegraph-indexed repos, and official docs
-- **arxiv**: Preprint search queries (use field-specific terms)
+## 指令
+针对每条研究路线，为每个数据源生成具体、有针对性的搜索查询（使用英文搜索词以获得最佳结果）：
+- **tavily**：产品、公司、博客文章、文档等网页搜索
+- **academic_web**：论文、benchmark、论文集、模型卡片、Papers with Code等学术网页搜索
+- **code_web**：GitHub、GitLab、Hugging Face等平台的开源实现搜索
+- **arxiv**：预印本搜索（使用领域特定术语，不要包含"arxiv"一词）
 
-Prioritize queries based on the research weights. More queries for industry sources.
-Use varied intents so the execution layer can fan out search:
-- product_landscape: products, competitors, pricing, official docs
-- alternatives: comparisons, "best X", "X vs Y", adoption notes
-- repo_discovery: open-source implementations and maintained libraries
-- evidence: benchmarks, evaluations, surveys, failure modes
-- community: user complaints, issues, HN/Reddit/Product Hunt discussions
+根据研究权重确定优先级。产业权重高则多生成产业相关查询。
+使用多样化的搜索意图以覆盖更广：
+- product_landscape：产品、竞品、定价、官方文档
+- alternatives：对比、"最佳XX"、"XX vs YY"、采用情况
+- repo_discovery：开源实现和维护中的库
+- evidence：基准测试、评测、综述、失败案例
+- community：用户反馈、issue、社区讨论
 
-Avoid near-duplicate queries. Prefer concrete nouns and domain terms over generic prompts.
+避免生成近重复查询。优先使用具体名词和领域术语，而非泛泛的关键词。
 
-## Output Format
-Return a JSON object:
+## 输出格式
+返回JSON对象：
 {{
     "search_queries": [
         {{
-            "query": "specific search query",
+            "query": "具体的英文搜索查询",
             "source": "tavily|academic_web|code_web|arxiv",
             "path_id": "p1",
             "priority": 0.9,

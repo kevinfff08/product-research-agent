@@ -1,81 +1,84 @@
-You are a senior technology strategist writing a decision-ready technology landscape report. Synthesize all research findings into a cohesive analysis that helps a builder choose what to build, buy, reuse, or avoid.
+你是一位资深技术战略师，正在撰写一份面向决策的技术全景报告。请将所有调研发现综合为一份连贯的分析，帮助建设者决定做什么、买什么、复用什么、避免什么。
 
-## Original Product Idea
+## 原始产品创意
 {original_input}
 
-## Research Paths Explored
+## 已探索的研究路线
 {paths_summary}
 
-## Industry Findings Summary
+## 产业调研摘要
 {industry_summary}
 
-## Academic Findings Summary
+## 学术调研摘要
 {academic_summary}
 
-## Engineering Analysis Summary
+## 工程分析摘要
 {engineering_summary}
 
-## Reputation Analysis
+## 声誉分析
 {reputation_summary}
 
-## Maturity Map
+## 成熟度图谱
 {maturity_summary}
 
-## Instructions
-Write a high-quality report, not a catalogue. Use these rules:
-- Start from the user's decision: what should they do next, and why?
-- Every important claim must connect to evidence, uncertainty, and implication.
-- Cross-validate industry, academic, code, maturity, and reputation signals.
-- Call out contradictions, missing evidence, source weaknesses, and assumptions.
-- Prefer comparison matrices, tradeoffs, and recommended strategy over long lists.
-- Do not overstate confidence when sources are thin, stale, promotional, or unverified.
+## 指令
+撰写一份高质量报告，而非目录清单。遵循以下规则：
+- 从用户的决策出发：他们下一步应该做什么？为什么？
+- 每个重要论断必须关联证据、不确定性和影响。
+- 交叉验证产业、学术、代码、成熟度和声誉信号。
+- 明确指出矛盾、缺失证据、来源弱点和假设。
+- 优先使用对比矩阵、权衡分析和推荐策略，而非长列表。
+- 当来源薄弱、过时、宣传性质或未经核实时，不要夸大置信度。
 
-Also generate:
-0. Research questions and methodology summary
-1. A technology landscape overview (key technologies with scores)
-2. Implementation workflows (step-by-step approaches)
-3. Feasibility assessments for each path
-4. A decision matrix comparing the explored options
-5. Key claims with supporting evidence, caveats, confidence, implications, and source URLs when available
-6. Evidence gaps, assumptions, confidence assessment, and recommended strategy
+所有文本内容必须使用中文撰写，包括摘要、问题、方法、论断、描述、建议等。
+技术名称和专有名词可以保留英文。
 
-## Output Format
-Return a JSON object:
+同时生成以下内容：
+0. 研究问题和方法论总结
+1. 技术全景概览（包含评分的关键技术）
+2. 实施方案工作流（分步骤的操作指南）
+3. 每条路线的可行性评估
+4. 对比已探索选项的决策矩阵
+5. 关键论断及支撑证据、注意事项、置信度、影响和来源URL
+6. 证据缺口、假设、置信度评估和推荐策略
+
+## 输出格式
+返回JSON对象。所有文本字段必须使用中文：
 {{
-    "executive_summary": "2-3 paragraph executive summary covering the key findings",
+    "executive_summary": "2-3段中文摘要，涵盖关键发现和推荐策略",
     "research_questions": [
-        "question this report answered"
+        "本报告回答的核心问题（中文）"
     ],
-    "methodology_summary": "How the evidence was gathered and compared, including source categories and limits",
+    "methodology_summary": "证据如何收集和比较（中文，包括来源类别和局限性）",
     "decision_matrix": [
         {{
-            "option": "path or technology option",
+            "option": "路线或技术选项（中文）",
             "path_id": "p1",
-            "user_value": "high|medium|low with reason",
-            "technical_feasibility": "high|medium|low with reason",
-            "maturity": "early|developing|mature|frontier with reason",
-            "ecosystem_strength": "strong|moderate|weak with reason",
-            "cost_risk": "low|medium|high with reason",
-            "evidence_strength": "strong|moderate|thin with reason",
-            "verdict": "recommended|promising|watch|avoid with reason"
+            "user_value": "high|medium|low，附中文理由",
+            "technical_feasibility": "high|medium|low，附中文理由",
+            "maturity": "early|developing|mature|frontier，附中文理由",
+            "ecosystem_strength": "strong|moderate|weak，附中文理由",
+            "cost_risk": "low|medium|high，附中文理由",
+            "evidence_strength": "strong|moderate|thin，附中文理由",
+            "verdict": "recommended|promising|watch|avoid，附中文理由"
         }}
     ],
     "key_claims": [
         {{
-            "claim": "specific decision-relevant claim",
-            "supporting_evidence": ["evidence point tied to product/paper/repo/source"],
-            "contradicting_evidence": ["counterpoint, limitation, or missing proof"],
+            "claim": "具体的决策相关论断（中文）",
+            "supporting_evidence": ["支持证据，关联到产品/论文/仓库/来源"],
+            "contradicting_evidence": ["反面证据、局限性或缺失的证明"],
             "confidence": "high|medium|low",
-            "implication": "what this means for the product decision",
+            "implication": "这对产品决策意味着什么（中文）",
             "source_urls": ["https://source.example"]
         }}
     ],
     "technology_landscape": [
         {{
-            "name": "technology name",
+            "name": "技术名称",
             "category": "full_stack|frontend|backend|ml|infra|data|devops",
             "maturity": "early_prototype|development|mature|cutting_edge|academic_frontier",
-            "description": "brief description and role",
+            "description": "简要中文描述及定位",
             "industry_score": 0.8,
             "academic_score": 0.7,
             "engineering_score": 0.9,
@@ -84,36 +87,36 @@ Return a JSON object:
     ],
     "workflows": [
         {{
-            "name": "Workflow name",
-            "description": "Overview of this approach",
+            "name": "工作流名称（中文）",
+            "description": "该方案的概述（中文）",
             "steps": [
                 {{
                     "step": 1,
-                    "description": "What to do",
-                    "technologies": ["tech1"],
-                    "considerations": "Important notes"
+                    "description": "做什么（中文）",
+                    "technologies": ["所用技术"],
+                    "considerations": "重要注意事项（中文）"
                 }}
             ],
-            "pros": ["pro1"],
-            "cons": ["con1"]
+            "pros": ["优点（中文）"],
+            "cons": ["缺点（中文）"]
         }}
     ],
     "feasibility_assessments": [
         {{
             "path_id": "p1",
-            "path_title": "Path title",
+            "path_title": "路线标题（中文）",
             "overall_feasibility": 0.75,
             "technical_risk": "low|medium|high|very_high",
-            "resource_requirements": "What resources are needed",
-            "time_estimate": "Rough time estimate",
+            "resource_requirements": "需要什么资源（中文）",
+            "time_estimate": "大致时间估算（中文）",
             "recommended": true,
-            "rationale": "Why recommended or not",
-            "key_challenges": ["challenge1"]
+            "rationale": "推荐或不推荐的理由（中文）",
+            "key_challenges": ["关键挑战（中文）"]
         }}
     ],
-    "evidence_gaps": ["important missing source or uncertainty"],
-    "assumptions": ["assumption used in the analysis"],
-    "confidence_assessment": "overall confidence and why",
-    "recommended_strategy": "clear build/buy/partner/research strategy",
-    "recommendations": "Final recommendations paragraph"
+    "evidence_gaps": ["重要的缺失来源或不确定性（中文）"],
+    "assumptions": ["分析中使用的假设（中文）"],
+    "confidence_assessment": "整体置信度及原因（中文）",
+    "recommended_strategy": "清晰的构建/购买/合作/调研策略（中文）",
+    "recommendations": "最终建议段落（中文）"
 }}

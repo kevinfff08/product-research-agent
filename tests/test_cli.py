@@ -84,7 +84,9 @@ def test_start_guided_flow(monkeypatch, tmp_path):
             self.output_paths = []
 
         async def run(self, request):
-            output = self.output_dir / f"{request.run_name}.md"
+            run_dir = self.output_dir / request.run_name
+            run_dir.mkdir(parents=True, exist_ok=True)
+            output = run_dir / f"{request.run_name}.md"
             self.output_paths = [output]
             return ResearchReport(
                 title=f"Technology Landscape: {request.title}",

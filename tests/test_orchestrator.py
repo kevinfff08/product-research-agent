@@ -123,8 +123,9 @@ async def test_run_full_pipeline(orchestrator):
     assert report.session_id  # Should have a session ID
     assert report.executive_summary == "A test report."
 
-    # Check output file was created
+    # Check output file was created (now in per-run subdirectory)
     output_files = list(orchestrator.output_dir.glob("*.md"))
+    output_files += list(orchestrator.output_dir.glob("*/*.md"))
     assert len(output_files) == 1
 
 

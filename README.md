@@ -11,9 +11,10 @@
 - 多 Provider LLM：支持 `openai`、`deepseek`、`google` 三类 OpenAI-compatible 调用，也保留 CLIProxyAPI 的 `setup-token` 模式。
 - 并行子 Agent：每个研究路径都会并发运行产业、学术、工程三个子 Agent；每个子 Agent 内部也会并发检索和分析。
 - 扩展型搜索规划：围绕产品、竞品、开源仓库、论文、benchmark、社区反馈生成多意图查询，并做去重和限额。
-- 决策型报告：报告包含研究问题、方法、决策矩阵、关键 claim、证据和反证、置信度、证据缺口、建议策略。
-- 统一命名：日志、session 和报告输出都使用 `日期时间_标题` 命名，例如 `20260504_120000_实时视频翻译工具.md`。
-- 非轮转日志：每次运行写入一个独立日志文件，不再按文件大小切分轮转。
+- 中文报告：所有提示词和报告输出均使用中文，技术名词保留英文原名。
+- 决策型报告：报告包含摘要、研究问题与方法、决策矩阵、关键论断与证据、技术全景、成熟度图谱、实施工作流、可行性评估、置信度与证据缺口、推荐策略等章节。
+- 统一命名与归档：日志、数据和报告输出均使用 `日期时间_标题` 命名。每次运行在 `output/` 下创建独立子目录存放报告，避免不同运行的产物混在一起。
+- 独立日志：每次运行写入一个独立日志文件，不按文件大小轮转。
 
 ## 快速开始
 
@@ -158,22 +159,21 @@ tests/                    # pytest 测试
 
 ## 输出和日志
 
-默认输出到 `output/`，日志写入 `logs/`。二者都使用同一个 run name：`YYYYMMDD_HHMMSS_标题`。
-
-示例：
+每次运行生成三个产物，均使用统一的 run name（`YYYYMMDD_HHMMSS_标题`）命名并分开归档：
 
 ```text
-output/20260504_120000_实时视频翻译工具.md
-output/20260504_120000_实时视频翻译工具.docx
-logs/20260504_120000_实时视频翻译工具.log
-data/research/20260504_120000_实时视频翻译工具/
+output/20260504_120000_实时视频翻译工具/
+  └── 20260504_120000_实时视频翻译工具.md    # Markdown 报告
+  └── 20260504_120000_实时视频翻译工具.docx  # DOCX 报告（--format docx/both）
+logs/20260504_120000_实时视频翻译工具.log      # 运行日志
+data/research/20260504_120000_实时视频翻译工具/ # 中间产物（拆解、计划、子Agent结果等JSON）
 ```
 
 日志文件不会按大小轮转；一次运行对应一个日志文件。
 
 ## 报告结构
 
-报告包括 Executive Summary、Research Question and Method、Decision Matrix、Key Claims and Evidence、Technology Landscape、Maturity Map、Implementation Workflows、行业/学术/工程发现、Reputation、Feasibility、Confidence/Gaps/Assumptions、Recommendations 和 Sources。
+中文报告包含以下章节：摘要、研究问题与方法、决策矩阵、关键论断与证据、技术全景、技术成熟度图谱、实施工作流、产业调研发现、学术调研发现、工程分析、声誉与可信度、可行性评估、置信度/证据缺口/假设、推荐策略、参考来源。
 
 ## 测试
 

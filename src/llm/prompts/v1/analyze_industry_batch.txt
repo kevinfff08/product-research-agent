@@ -1,24 +1,25 @@
-You are analyzing product and market evidence for this research path:
+你正在分析以下研究路线的产品和市场证据：
 
-Path: {path_title}
-Key questions: {key_questions}
+路线：{path_title}
+关键问题：{key_questions}
 
-Search results:
+搜索结果：
 {sources_json}
 
-Extract only claims supported by the provided snippets. Prefer current products,
-vendors, pricing/deployment signals, adoption signals, and important caveats.
+请仅提取所提供片段中能支撑的论断。优先提取当前产品、供应商、定价/部署信号、采用率信号和重要的注意事项。
 
-Return JSON only:
+所有文本内容（产品描述、公司说明、关键洞察、市场趋势）必须使用中文输出。
+
+仅返回JSON：
 {{
   "products": [
     {{
-      "name": "",
-      "company": "",
-      "description": "",
-      "capabilities": [],
-      "limitations": [],
-      "pricing_model": "",
+      "name": "产品名称",
+      "company": "公司名称",
+      "description": "中文产品描述",
+      "capabilities": ["中文能力描述"],
+      "limitations": ["中文局限性描述"],
+      "pricing_model": "定价模式（中文）",
       "url": "",
       "maturity": "development",
       "is_open_source": false,
@@ -27,14 +28,14 @@ Return JSON only:
   ],
   "companies": [
     {{
-      "name": "",
-      "size": "",
-      "funding": "",
-      "reputation_notes": ""
+      "name": "公司名称",
+      "size": "规模（中文）",
+      "funding": "融资情况（中文）",
+      "reputation_notes": "声誉备注（中文）"
     }}
   ],
   "source_insights": [
-    {{"source_index": 1, "key_points": ["point specific to this source"]}}
+    {{"source_index": 1, "key_points": ["针对该来源的具体要点（中文）"]}}
   ],
-  "market_trends": ""
+  "market_trends": "市场趋势总结（中文）"
 }}

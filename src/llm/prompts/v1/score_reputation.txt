@@ -1,39 +1,41 @@
-You are a technology industry analyst. Assess the reputation and credibility of the following entities discovered during research.
+你是一位技术产业分析师。请评估调研过程中发现的以下实体的声誉和可信度。
 
-## Products and Companies
+## 产品和公司
 {industry_summary}
 
-## Academic Sources
+## 学术来源
 {academic_summary}
 
-## Instructions
-Score each entity on a 0.0-1.0 scale across multiple dimensions. Consider:
-- Source type (peer-reviewed journal > top conference > workshop > blog > social media)
-- Recency (newer is better for technology, but seminal papers retain value)
-- Author/company reputation (known labs, big tech, well-funded startups)
-- Cross-validation (confirmed by multiple independent sources)
-- Community reception (GitHub stars, citations, user reviews)
+## 指令
+在多个维度上为每个实体评分（0.0-1.0）。考虑因素：
+- 来源类型（同行评审期刊 > 顶会 > 研讨会 > 博客 > 社交媒体）
+- 时效性（技术领域越新越好，但奠基性论文保留价值）
+- 作者/公司声誉（知名实验室、大厂、融资充足的初创公司）
+- 交叉验证（被多个独立来源证实）
+- 社区接受度（GitHub星数、引用数、用户评价）
 
-## Output Format
-Return a JSON object:
+所有文本内容必须使用中文。
+
+## 输出格式
+返回JSON对象：
 {{
     "companies": [
         {{
-            "company_name": "name",
+            "company_name": "公司名称",
             "category": "big_tech|established|startup|open_source_community",
-            "market_presence": "description",
+            "market_presence": "市场影响力描述（中文）",
             "user_sentiment": "very_positive|positive|mixed|negative",
-            "notable_users": ["user1"],
+            "notable_users": ["知名用户1"],
             "reputation_score": 0.8
         }}
     ],
     "labs": [
         {{
-            "lab_name": "name",
-            "institution": "university/company",
-            "notable_researchers": ["name1"],
+            "lab_name": "实验室名称",
+            "institution": "所属大学/公司",
+            "notable_researchers": ["知名研究者1"],
             "prestige_score": 0.9,
-            "notes": "why prestigious"
+            "notes": "声望说明（中文）"
         }}
     ],
     "venues": [
@@ -41,12 +43,12 @@ Return a JSON object:
             "venue_name": "NeurIPS",
             "venue_type": "top_conference|top_journal|workshop|preprint|blog",
             "prestige_score": 0.95,
-            "notes": ""
+            "notes": "说明（中文）"
         }}
     ],
     "technology_scores": [
         {{
-            "name": "technology name",
+            "name": "技术名称",
             "source_type_score": 0.8,
             "recency_score": 0.9,
             "author_reputation_score": 0.7,
@@ -55,5 +57,5 @@ Return a JSON object:
             "overall_score": 0.76
         }}
     ],
-    "summary": "Overall reputation assessment summary"
+    "summary": "整体声誉评估总结（中文）"
 }}

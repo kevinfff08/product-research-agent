@@ -285,7 +285,8 @@ class LLMClient:
         """Generate JSON output from a prompt."""
         json_system = (system + "\n\n" if system else "") + (
             "You must respond with valid JSON only. No markdown fences, no explanations, "
-            "just the JSON object/array."
+            "just the JSON object/array. "
+            "请只返回有效的JSON对象或数组，不要使用markdown代码块，不要添加任何解释。"
         )
         return self.generate(
             prompt,
