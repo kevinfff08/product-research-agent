@@ -21,6 +21,7 @@ from src.models.report import ResearchReport
 # API clients
 from src.apis.tavily_client import TavilyClient
 from src.apis.arxiv_client import ArxivClient
+from src.apis.openalex_client import OpenAlexClient
 from src.apis.web_scraper import WebScraper
 
 # Agents
@@ -115,6 +116,7 @@ class Orchestrator:
             cache_dir=self.store.cache_dir,
         )
         self.arxiv = ArxivClient()
+        self.openalex = OpenAlexClient(cache_dir=self.store.cache_dir)
         self.scraper = WebScraper()
 
         # Build agents
@@ -137,6 +139,7 @@ class Orchestrator:
             self.store,
             self.tavily,
             self.arxiv,
+            self.openalex,
             max_academic_queries=default_limits["max_academic_queries_per_path"],
             max_arxiv_queries=default_limits["max_arxiv_queries_per_path"],
             papers_per_query=default_limits["max_papers_per_query"],
@@ -432,7 +435,7 @@ class Orchestrator:
 
     async def _cleanup(self) -> None:
         """Close API clients."""
-        for client in [self.tavily, self.arxiv, self.scraper]:
+        for client in [self.tavily, self.arxiv, self.openalex, self.scraper]:
             try:
                 await client.close()
             except Exception:
@@ -465,6 +468,9 @@ class Orchestrator:
 
         self.academic_researcher.max_academic_queries = settings["max_academic_queries_per_path"]
         self.academic_researcher.max_arxiv_queries = settings["max_arxiv_queries_per_path"]
+        self.academic_researcher.max_openalex_queries = settings.get(
+            "max_openalex_queries_per_path", settings.get("max_arxiv_queries_per_path", 3),
+        )
         self.academic_researcher.papers_per_query = settings["max_papers_per_query"]
         self.academic_researcher.max_paper_analyses = settings["max_papers_per_path"]
         self.academic_researcher.api_concurrency = max(1, settings["api_concurrency"])

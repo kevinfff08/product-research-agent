@@ -34,6 +34,9 @@ class MarkdownReporter:
             self._decision_matrix(report),
             self._key_claims(report),
             self._technology_landscape(report),
+            self._technology_relationships(report),
+            self._path_deep_analysis(report),
+            self._cross_analysis(report),
             self._maturity_map(report),
             self._implementation_workflows(report),
             self._industry_findings(report),
@@ -181,6 +184,106 @@ class MarkdownReporter:
                 lines.append("**Pros:** " + "; ".join(wf.pros))
             if wf.cons:
                 lines.append("**Cons:** " + "; ".join(wf.cons))
+            lines.append("")
+        return "\n".join(lines)
+
+    def _path_deep_analysis(self, report: ResearchReport) -> str:
+        if not report.path_deep_analysis:
+            return ""
+        lines = ["## 研究路线深度分析", ""]
+        for pa in report.path_deep_analysis:
+            lines.append(f"### {pa.title}")
+            if pa.technical_overview:
+                lines.append(f"\n{pa.technical_overview}\n")
+
+            if pa.key_technologies_detail:
+                lines.append("#### 核心技术详解\n")
+                for td in pa.key_technologies_detail:
+                    lines.append(f"**{td.name}**\n")
+                    if td.what_it_is:
+                        lines.append(f"- **是什么**：{td.what_it_is}")
+                    if td.how_it_works:
+                        lines.append(f"- **工作原理**：{td.how_it_works}")
+                    if td.pros:
+                        lines.append(f"- **优势**：{'；'.join(td.pros)}")
+                    if td.cons:
+                        lines.append(f"- **劣势**：{'；'.join(td.cons)}")
+                    if td.implementation_notes:
+                        lines.append(f"- **实现建议**：{td.implementation_notes}")
+                    if td.industry_evidence:
+                        lines.append(f"- **产业证据**：{td.industry_evidence}")
+                    if td.academic_evidence:
+                        lines.append(f"- **学术证据**：{td.academic_evidence}")
+                    if td.engineering_evidence:
+                        lines.append(f"- **工程证据**：{td.engineering_evidence}")
+                    lines.append("")
+
+            if pa.cross_references:
+                lines.append("#### 交叉关联\n")
+                lines.append(pa.cross_references)
+                lines.append("")
+
+            pcs = pa.pros_cons_summary
+            if pcs.strengths or pcs.weaknesses:
+                lines.append("#### 优劣势总结\n")
+                if pcs.strengths:
+                    lines.append("**核心优势：**")
+                    for s in pcs.strengths:
+                        lines.append(f"- {s}")
+                if pcs.weaknesses:
+                    lines.append("\n**核心劣势：**")
+                    for w in pcs.weaknesses:
+                        lines.append(f"- {w}")
+                if pcs.best_for:
+                    lines.append(f"\n**最适合场景**：{pcs.best_for}")
+                if pcs.not_suitable_for:
+                    lines.append(f"**不适合场景**：{pcs.not_suitable_for}")
+                lines.append("")
+        return "\n".join(lines)
+
+    def _cross_analysis(self, report: ResearchReport) -> str:
+        ca = report.cross_analysis
+        if not ca.industry_academic_alignment and not ca.academic_engineering_gap:
+            return ""
+        lines = ["## 交叉分析：产业-学术-工程的互证与矛盾", ""]
+        if ca.industry_academic_alignment:
+            lines.append(f"### 产业与学术的一致性\n\n{ca.industry_academic_alignment}\n")
+        if ca.academic_engineering_gap:
+            lines.append(f"### 学术研究与工程实现的差距\n\n{ca.academic_engineering_gap}\n")
+        if ca.evidence_quality_overview:
+            lines.append(f"### 证据质量总览\n\n{ca.evidence_quality_overview}\n")
+        if ca.key_contradictions:
+            lines.append("### 关键矛盾与分歧\n")
+            for kc in ca.key_contradictions:
+                lines.append(f"- {kc}")
+            lines.append("")
+        return "\n".join(lines)
+
+    def _technology_relationships(self, report: ResearchReport) -> str:
+        tr = report.technology_relationships
+        has_rel = (tr.complementary_pairs or tr.alternatives or tr.dependency_chains)
+        if not has_rel:
+            return ""
+        lines = ["## 技术关系图谱", ""]
+        if tr.complementary_pairs:
+            lines.append("### 互补技术\n")
+            for pair in tr.complementary_pairs:
+                if len(pair) >= 3:
+                    lines.append(f"- **{pair[0]}** + **{pair[1]}**：{pair[2]}")
+                elif len(pair) >= 2:
+                    lines.append(f"- **{pair[0]}** + **{pair[1]}**")
+            lines.append("")
+        if tr.alternatives:
+            lines.append("### 替代关系\n")
+            for pair in tr.alternatives:
+                if len(pair) >= 3:
+                    lines.append(f"- **{pair[0]}** ↔ **{pair[1]}**：{pair[2]}")
+            lines.append("")
+        if tr.dependency_chains:
+            lines.append("### 依赖链\n")
+            for chain in tr.dependency_chains:
+                if len(chain) >= 3:
+                    lines.append(f"- **{chain[0]}** → **{chain[1]}**：{chain[2]}")
             lines.append("")
         return "\n".join(lines)
 

@@ -10,9 +10,10 @@
 - 交互式启动：默认入口是 `start` 向导，每一轮都会提示必填/选填、输入格式和示例。
 - 多 Provider LLM：支持 `openai`、`deepseek`、`google` 三类 OpenAI-compatible 调用，也保留 CLIProxyAPI 的 `setup-token` 模式。
 - 并行子 Agent：每个研究路径都会并发运行产业、学术、工程三个子 Agent；每个子 Agent 内部也会并发检索和分析。
-- 扩展型搜索规划：围绕产品、竞品、开源仓库、论文、benchmark、社区反馈生成多意图查询，并做去重和限额。
-- 中文报告：所有提示词和报告输出均使用中文，技术名词保留英文原名。
-- 决策型报告：报告包含摘要、研究问题与方法、决策矩阵、关键论断与证据、技术全景、成熟度图谱、实施工作流、可行性评估、置信度与证据缺口、推荐策略等章节。
+- 三层学术搜索：OpenAlex（高影响力已发表论文，含引用数和会议/期刊分级）+ arXiv（最新预印本，含频率限制）+ Tavily（学术网页搜索），自动过滤无关论文。
+- 扩展型搜索规划：围绕产品、竞品、开源仓库、论文、benchmark、社区反馈生成多意图查询，自动清理平台名和无效关键词。
+- 中文深度报告：所有提示词和报告输出均使用中文。每项技术含"是什么/原理/优劣/实现建议/证据"详解；每条路线含技术总览、核心技术详解、交叉关联、优劣势总结；额外包含技术关系图谱（互补/替代/依赖链）和交叉分析（产业-学术-工程互证与矛盾）章节。
+- 决策型报告：报告包含摘要、研究问题与方法、决策矩阵、关键论断与证据、技术全景、技术关系图谱、路线深度分析、交叉分析、成熟度图谱、实施工作流、可行性评估、置信度与证据缺口、推荐策略等章节。
 - 统一命名与归档：日志、数据和报告输出均使用 `日期时间_标题` 命名。每次运行在 `output/` 下创建独立子目录存放报告，避免不同运行的产物混在一起。
 - 独立日志：每次运行写入一个独立日志文件，不按文件大小轮转。
 
@@ -145,16 +146,16 @@ src/
   orchestrator.py         # 异步流水线协调器
   logging_config.py       # 非轮转日志配置
   llm/client.py           # OpenAI-compatible/CLIProxyAPI LLM 客户端
-  agents/                 # 调研子 Agent
-  apis/                   # Tavily、arXiv、Web scraper，以及历史兼容客户端
-  models/                 # Pydantic v2 数据模型
+  agents/                 # 调研子 Agent（分解、规划、产业、学术OpenAlex+arXiv+Tavily、工程、声誉、成熟度、报告生成）
+  apis/                   # Tavily、OpenAlex（已发表高引论文）、arXiv（预印本）、GitHub、Web scraper
+  models/                 # Pydantic v2 数据模型（含深度分析模型）
   storage/local_store.py  # 本地 JSON 会话存储
-  reporters/              # Markdown/DOCX 输出
-  utils/                  # 命名、JSON 修复、文本处理、重试工具
+  reporters/              # Markdown/DOCX 输出（含深度分析章节）
+  utils/                  # 命名、JSON 修复、搜索查询清理、文本处理、重试工具
 config/default.yaml       # 非密钥运行配置
 docs/research/            # 当前调研和设计依据
 docs/archive/             # 过时说明和历史调研资料
-tests/                    # pytest 测试
+tests/                    # pytest 测试（151 个）
 ```
 
 ## 输出和日志

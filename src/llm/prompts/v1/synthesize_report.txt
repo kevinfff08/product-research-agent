@@ -1,4 +1,4 @@
-你是一位资深技术战略师，正在撰写一份面向决策的技术全景报告。请将所有调研发现综合为一份连贯的分析，帮助建设者决定做什么、买什么、复用什么、避免什么。
+你是一位资深技术战略师和产品架构师。你的任务是将多维度调研结果综合为一份深度分析报告——不是资料目录，而是能指导技术决策的完整论述。
 
 ## 原始产品创意
 {original_input}
@@ -21,102 +21,149 @@
 ## 成熟度图谱
 {maturity_summary}
 
-## 指令
-撰写一份高质量报告，而非目录清单。遵循以下规则：
-- 从用户的决策出发：他们下一步应该做什么？为什么？
-- 每个重要论断必须关联证据、不确定性和影响。
-- 交叉验证产业、学术、代码、成熟度和声誉信号。
-- 明确指出矛盾、缺失证据、来源弱点和假设。
-- 优先使用对比矩阵、权衡分析和推荐策略，而非长列表。
-- 当来源薄弱、过时、宣传性质或未经核实时，不要夸大置信度。
+## 核心原则
 
-所有文本内容必须使用中文撰写，包括摘要、问题、方法、论断、描述、建议等。
-技术名称和专有名词可以保留英文。
+**分析而非罗列**：对每一项技术、每一条路线，必须解释"是什么、为什么重要、怎么实现、优劣对比"。不要只列名字。
 
-同时生成以下内容：
-0. 研究问题和方法论总结
-1. 技术全景概览（包含评分的关键技术）
-2. 实施方案工作流（分步骤的操作指南）
-3. 每条路线的可行性评估
-4. 对比已探索选项的决策矩阵
-5. 关键论断及支撑证据、注意事项、置信度、影响和来源URL
-6. 证据缺口、假设、置信度评估和推荐策略
+**交叉关联**：产业产品 ↔ 学术论文 ↔ 开源实现之间必须建立逻辑联系。例如："该产品采用的XX技术，与论文YY提出的方法一致，开源项目ZZ已实现了类似方案，但存在AB差距"。
+
+**技术深度**：解释关键技术的工作原理和技术细节，让读者理解其本质和适用场景，而非仅仅知道其存在。
+
+**证据驱动**：每个重要论断必须关联具体证据（产品名/论文标题/仓库名/数据），同时标注证据强度和不确定性。
+
+**决策导向**：最终目的是帮助决策者判断"做什么、买什么、复用什么、避免什么"。
 
 ## 输出格式
-返回JSON对象。所有文本字段必须使用中文：
+
+返回以下JSON对象。所有文本字段必须使用中文（技术名词可保留英文），每个字段必须包含实质性内容而非空泛的描述：
+
 {{
-    "executive_summary": "2-3段中文摘要，涵盖关键发现和推荐策略",
-    "research_questions": [
-        "本报告回答的核心问题（中文）"
-    ],
-    "methodology_summary": "证据如何收集和比较（中文，包括来源类别和局限性）",
-    "decision_matrix": [
-        {{
-            "option": "路线或技术选项（中文）",
-            "path_id": "p1",
-            "user_value": "high|medium|low，附中文理由",
-            "technical_feasibility": "high|medium|low，附中文理由",
-            "maturity": "early|developing|mature|frontier，附中文理由",
-            "ecosystem_strength": "strong|moderate|weak，附中文理由",
-            "cost_risk": "low|medium|high，附中文理由",
-            "evidence_strength": "strong|moderate|thin，附中文理由",
-            "verdict": "recommended|promising|watch|avoid，附中文理由"
-        }}
-    ],
-    "key_claims": [
-        {{
-            "claim": "具体的决策相关论断（中文）",
-            "supporting_evidence": ["支持证据，关联到产品/论文/仓库/来源"],
-            "contradicting_evidence": ["反面证据、局限性或缺失的证明"],
-            "confidence": "high|medium|low",
-            "implication": "这对产品决策意味着什么（中文）",
-            "source_urls": ["https://source.example"]
-        }}
-    ],
+    "executive_summary": "3-4段深度摘要。第一段：产品创意的核心挑战和技术本质。第二段：主要研究发现（产业/学术/工程的交叉结论）。第三段：关键风险与不确定性。第四段：明确推荐策略（做什么、买什么、复用什么、避免什么）及理由。",
+
+    "research_questions": ["本报告回答的核心问题（中文）"],
+
+    "methodology_summary": "详细说明证据收集方法、来源类别、搜索范围、局限性、以及各来源的置信度评估方式。",
+
     "technology_landscape": [
         {{
             "name": "技术名称",
             "category": "full_stack|frontend|backend|ml|infra|data|devops",
             "maturity": "early_prototype|development|mature|cutting_edge|academic_frontier",
-            "description": "简要中文描述及定位",
+            "description": "150字以上的详细分析，包括：这项技术是什么、核心原理、在本产品场景中的作用、优势（至少2点）、局限性（至少2点）、与其他技术的依赖或替代关系。",
             "industry_score": 0.8,
             "academic_score": 0.7,
             "engineering_score": 0.9,
             "reputation_score": 0.85
         }}
     ],
+
+    "path_deep_analysis": [
+        {{
+            "path_id": "p1",
+            "title": "路线标题",
+            "technical_overview": "300字以上的技术总览：该路线的核心技术架构是什么？分层说明各层职责和关键技术选型。",
+            "key_technologies_detail": [
+                {{
+                    "name": "核心技术名称",
+                    "what_it_is": "这项技术是什么，解决什么问题",
+                    "how_it_works": "基本原理和工作方式（100字以上）",
+                    "pros": ["优势1", "优势2"],
+                    "cons": ["劣势1", "劣势2"],
+                    "implementation_notes": "如何在项目中集成或实现该技术",
+                    "industry_evidence": "产业界的使用证据（产品/公司/采用率）",
+                    "academic_evidence": "学术界的研究证据（论文/benchmark/引用）",
+                    "engineering_evidence": "工程可行性的证据（开源库/部署经验/社区活跃度）"
+                }}
+            ],
+            "cross_references": "150字以上：这条路线与产业报告中的哪些产品相关？学术论文中的哪些方法支撑了这条路线的可行性？工程分析中的哪些开源项目可以作为实现基础？它们之间的一致性和矛盾是什么？",
+            "pros_cons_summary": {{
+                "strengths": ["核心优势（含证据）"],
+                "weaknesses": ["核心劣势（含证据）"],
+                "best_for": "最适合什么场景",
+                "not_suitable_for": "不适合什么场景"
+            }}
+        }}
+    ],
+
     "workflows": [
         {{
-            "name": "工作流名称（中文）",
-            "description": "该方案的概述（中文）",
+            "name": "实施方案名称",
+            "description": "该方案的总体思路和目标",
             "steps": [
                 {{
                     "step": 1,
-                    "description": "做什么（中文）",
-                    "technologies": ["所用技术"],
-                    "considerations": "重要注意事项（中文）"
+                    "description": "100字以上的步骤说明，包括做什么、为什么这么做、怎么做、预期产出",
+                    "technologies": ["需要的技术/工具"],
+                    "considerations": "实施注意事项、常见陷阱、替代方案"
                 }}
             ],
-            "pros": ["优点（中文）"],
-            "cons": ["缺点（中文）"]
+            "pros": ["方案优势"],
+            "cons": ["方案劣势和风险"],
+            "estimated_effort": "预估工作量（几人·月）",
+            "prerequisites": ["前置条件"]
         }}
     ],
+
+    "decision_matrix": [
+        {{
+            "option": "路线或技术选项",
+            "path_id": "p1",
+            "user_value": "对用户的价值评级及详细理由（中文）",
+            "technical_feasibility": "技术可行性评级及详细理由（中文）",
+            "maturity": "技术成熟度评级及详细理由（中文）",
+            "ecosystem_strength": "生态强度评级及详细理由（中文）",
+            "cost_risk": "成本与风险评级及详细理由（中文）",
+            "evidence_strength": "证据强度评级及详细理由（中文）",
+            "verdict": "综合结论及详细理由（中文）"
+        }}
+    ],
+
+    "key_claims": [
+        {{
+            "claim": "具体的决策相关论断",
+            "supporting_evidence": ["支持证据（附来源名）"],
+            "contradicting_evidence": ["反面证据或注意事项"],
+            "confidence": "high|medium|low",
+            "implication": "这对产品决策意味着什么（50字以上）",
+            "source_urls": ["https://..."],
+            "cross_references": "该论断与其他章节的哪些分析相关联"
+        }}
+    ],
+
+    "cross_analysis": {{
+        "industry_academic_alignment": "产业产品与学术论文之间的一致性和矛盾分析（150字以上）",
+        "academic_engineering_gap": "学术研究与工程实现之间的差距分析（150字以上）",
+        "evidence_quality_overview": "整体证据质量评估：哪些方面证据充足、哪些薄弱、为什么",
+        "key_contradictions": ["不同来源之间的重要矛盾或分歧"]
+    }},
+
     "feasibility_assessments": [
         {{
             "path_id": "p1",
-            "path_title": "路线标题（中文）",
+            "path_title": "路线标题",
             "overall_feasibility": 0.75,
             "technical_risk": "low|medium|high|very_high",
-            "resource_requirements": "需要什么资源（中文）",
-            "time_estimate": "大致时间估算（中文）",
+            "technical_risk_detail": "100字以上的技术风险详细分析",
+            "resource_requirements": "详细的资源需求（人力、硬件、数据、时间）",
+            "time_estimate": "开发时间估算（分阶段）",
             "recommended": true,
-            "rationale": "推荐或不推荐的理由（中文）",
-            "key_challenges": ["关键挑战（中文）"]
+            "rationale": "200字以上的推荐理由，包括证据支撑和风险考量",
+            "key_challenges": ["关键技术挑战"],
+            "mitigation_strategies": ["应对策略"]
         }}
     ],
-    "evidence_gaps": ["重要的缺失来源或不确定性（中文）"],
-    "assumptions": ["分析中使用的假设（中文）"],
-    "confidence_assessment": "整体置信度及原因（中文）",
-    "recommended_strategy": "清晰的构建/购买/合作/调研策略（中文）",
-    "recommendations": "最终建议段落（中文）"
+
+    "recommended_strategy": "300字以上的完整推荐策略：短期做什么（1-3个月）、中期做什么（3-12个月）、长期做什么（12个月以上）、每一步的依据是什么。明确标注构建/购买/复用/观望的建议。",
+
+    "recommendations": "最终建议总结",
+
+    "evidence_gaps": ["重要但缺失的证据或信息"],
+    "assumptions": ["分析中使用的关键假设"],
+    "confidence_assessment": "200字以上的整体置信度评估：哪些结论置信度高、哪些低、为什么",
+
+    "technology_relationships": {{
+        "complementary_pairs": [["技术A", "技术B", "互补关系说明"]],
+        "alternatives": [["技术C", "技术D", "替代关系说明"]],
+        "dependency_chains": [["基础技术", "依赖技术", "依赖关系说明"]]
+    }}
 }}

@@ -55,6 +55,11 @@ def orchestrator(tmp_path, mock_config):
     ]:
         agent.llm = mock_llm
 
+    # Mock OpenAlex
+    orch.openalex = AsyncMock()
+    orch.openalex.search_high_impact.return_value = []
+    orch.openalex.close = AsyncMock()
+
     # Mock API clients
     orch.tavily = AsyncMock()
     orch.tavily.search.return_value = {"results": []}
@@ -72,6 +77,7 @@ def orchestrator(tmp_path, mock_config):
     orch.industry_researcher.scraper = orch.scraper
     orch.academic_researcher.academic_search = orch.tavily
     orch.academic_researcher.arxiv = orch.arxiv
+    orch.academic_researcher.openalex = orch.openalex
     orch.engineering_analyst.code_search = orch.tavily
 
     return orch

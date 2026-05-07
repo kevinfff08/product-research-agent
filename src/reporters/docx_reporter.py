@@ -57,6 +57,9 @@ class DocxReporter:
         self._add_decision_matrix(report, document)
         self._add_key_claims(report, document)
         self._add_technology_landscape(report, document)
+        self._add_technology_relationships(report, document)
+        self._add_path_deep_analysis(report, document)
+        self._add_cross_analysis(report, document)
         self._add_maturity_map(report, document)
         self._add_workflows(report, document)
         self._add_industry_findings(report, document)
@@ -235,6 +238,89 @@ class DocxReporter:
                 )
             self._add_inline_list(document, "Pros", workflow.pros)
             self._add_inline_list(document, "Cons", workflow.cons)
+
+    def _add_path_deep_analysis(self, report: ResearchReport, document: Any) -> None:
+        if not report.path_deep_analysis:
+            return
+        document.add_heading("研究路线深度分析", level=1)
+        for pa in report.path_deep_analysis:
+            document.add_heading(pa.title, level=2)
+            if pa.technical_overview:
+                document.add_paragraph(pa.technical_overview)
+            if pa.key_technologies_detail:
+                document.add_heading("核心技术详解", level=3)
+                for td in pa.key_technologies_detail:
+                    p = document.add_paragraph()
+                    p.add_run(f"{td.name}\n").bold = True
+                    for label, value in [
+                        ("是什么", td.what_it_is), ("工作原理", td.how_it_works),
+                        ("优势", "；".join(td.pros)), ("劣势", "；".join(td.cons)),
+                        ("实现建议", td.implementation_notes),
+                        ("产业证据", td.industry_evidence),
+                        ("学术证据", td.academic_evidence),
+                        ("工程证据", td.engineering_evidence),
+                    ]:
+                        if value:
+                            document.add_paragraph(f"{label}：{value}", style="List Bullet")
+            if pa.cross_references:
+                document.add_heading("交叉关联", level=3)
+                document.add_paragraph(pa.cross_references)
+            pcs = pa.pros_cons_summary
+            if pcs.strengths or pcs.weaknesses:
+                document.add_heading("优劣势总结", level=3)
+                self._add_inline_list(document, "核心优势", pcs.strengths)
+                self._add_inline_list(document, "核心劣势", pcs.weaknesses)
+                if pcs.best_for:
+                    document.add_paragraph(f"最适合场景：{pcs.best_for}")
+                if pcs.not_suitable_for:
+                    document.add_paragraph(f"不适合场景：{pcs.not_suitable_for}")
+
+    def _add_cross_analysis(self, report: ResearchReport, document: Any) -> None:
+        ca = report.cross_analysis
+        if not ca.industry_academic_alignment and not ca.academic_engineering_gap:
+            return
+        document.add_heading("交叉分析：产业-学术-工程的互证与矛盾", level=1)
+        if ca.industry_academic_alignment:
+            document.add_heading("产业与学术的一致性", level=2)
+            document.add_paragraph(ca.industry_academic_alignment)
+        if ca.academic_engineering_gap:
+            document.add_heading("学术研究与工程实现的差距", level=2)
+            document.add_paragraph(ca.academic_engineering_gap)
+        if ca.evidence_quality_overview:
+            document.add_heading("证据质量总览", level=2)
+            document.add_paragraph(ca.evidence_quality_overview)
+        if ca.key_contradictions:
+            document.add_heading("关键矛盾与分歧", level=2)
+            for kc in ca.key_contradictions:
+                document.add_paragraph(kc, style="List Bullet")
+
+    def _add_technology_relationships(self, report: ResearchReport, document: Any) -> None:
+        tr = report.technology_relationships
+        has_rel = (tr.complementary_pairs or tr.alternatives or tr.dependency_chains)
+        if not has_rel:
+            return
+        document.add_heading("技术关系图谱", level=1)
+        if tr.complementary_pairs:
+            document.add_heading("互补技术", level=2)
+            for pair in tr.complementary_pairs:
+                text = f"{pair[0]} + {pair[1]}" if len(pair) >= 2 else str(pair)
+                if len(pair) >= 3:
+                    text += f"：{pair[2]}"
+                document.add_paragraph(text, style="List Bullet")
+        if tr.alternatives:
+            document.add_heading("替代关系", level=2)
+            for pair in tr.alternatives:
+                text = f"{pair[0]} ↔ {pair[1]}" if len(pair) >= 2 else str(pair)
+                if len(pair) >= 3:
+                    text += f"：{pair[2]}"
+                document.add_paragraph(text, style="List Bullet")
+        if tr.dependency_chains:
+            document.add_heading("依赖链", level=2)
+            for chain in tr.dependency_chains:
+                text = f"{chain[0]} → {chain[1]}" if len(chain) >= 2 else str(chain)
+                if len(chain) >= 3:
+                    text += f"：{chain[2]}"
+                document.add_paragraph(text, style="List Bullet")
 
     def _add_industry_findings(self, report: ResearchReport, document: Any) -> None:
         if not report.industry_findings:

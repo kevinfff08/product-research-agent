@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -18,13 +20,16 @@ class ArxivClient:
     """Client for arXiv API - preprint paper search.
 
     Not extending BaseAPIClient because arXiv uses XML, not JSON.
+    Includes rate limiting to respect arXiv's API guidelines.
     """
 
     BASE_URL = "https://export.arxiv.org/api/query"
-    USER_AGENT = "ProductResearch/0.1 (research agent; contact: local)"
+    USER_AGENT = "ProductResearch/0.2 (research agent; contact: local)"
 
     def __init__(self):
         self._client: httpx.AsyncClient | None = None
+        self._last_request_time: float = 0.0
+        self._min_interval: float = 1.0  # 1 second between requests (arXiv guideline: <1 req/sec)
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -57,9 +62,15 @@ class ArxivClient:
             "sortOrder": sort_order,
         }
 
+        # Rate limiting: arXiv allows ~1 request per second
+        elapsed_since_last = time.monotonic() - self._last_request_time
+        if elapsed_since_last < self._min_interval:
+            await asyncio.sleep(self._min_interval - elapsed_since_last)
+
         logger.info("arXiv search: query=%s, max=%d", query, max_results)
         client = await self._get_client()
         response = await client.get(self.BASE_URL, params=params)
+        self._last_request_time = time.monotonic()
         response.raise_for_status()
 
         papers = self._parse_response(response.text)

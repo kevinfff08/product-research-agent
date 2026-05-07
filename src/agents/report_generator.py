@@ -14,6 +14,8 @@ from src.models.reputation import ReputationReport
 from src.models.report import (
     ResearchReport, TechnologyEntry, ImplementationWorkflow,
     WorkflowStep, FeasibilityAssessment, DecisionMatrixRow, EvidenceClaim,
+    PathDeepAnalysis, PathTechDetail, ProsConsSummary,
+    CrossAnalysis, TechnologyRelationships,
 )
 from src.models.common import MaturityStage, SourceReference
 
@@ -68,7 +70,7 @@ class ReportGenerator(BaseAgent):
                 },
             ),
             temperature=0.3,
-            max_tokens=16384,
+            max_tokens=24576,
         )
 
         # Build report
@@ -167,6 +169,53 @@ class ReportGenerator(BaseAgent):
                     rationale=fa.get("rationale", ""),
                     key_challenges=fa.get("key_challenges", []),
                 ))
+
+            # Parse deep path analyses
+            for dpa in result.get("path_deep_analysis", []):
+                techs = []
+                for td in dpa.get("key_technologies_detail", []):
+                    techs.append(PathTechDetail(
+                        name=td.get("name", ""),
+                        what_it_is=td.get("what_it_is", ""),
+                        how_it_works=td.get("how_it_works", ""),
+                        pros=self._string_list(td.get("pros", [])),
+                        cons=self._string_list(td.get("cons", [])),
+                        implementation_notes=td.get("implementation_notes", ""),
+                        industry_evidence=td.get("industry_evidence", ""),
+                        academic_evidence=td.get("academic_evidence", ""),
+                        engineering_evidence=td.get("engineering_evidence", ""),
+                    ))
+                pcs = dpa.get("pros_cons_summary", {}) or {}
+                report.path_deep_analysis.append(PathDeepAnalysis(
+                    path_id=dpa.get("path_id", ""),
+                    title=dpa.get("title", ""),
+                    technical_overview=dpa.get("technical_overview", ""),
+                    key_technologies_detail=techs,
+                    cross_references=dpa.get("cross_references", ""),
+                    pros_cons_summary=ProsConsSummary(
+                        strengths=self._string_list(pcs.get("strengths", [])),
+                        weaknesses=self._string_list(pcs.get("weaknesses", [])),
+                        best_for=pcs.get("best_for", ""),
+                        not_suitable_for=pcs.get("not_suitable_for", ""),
+                    ),
+                ))
+
+            # Parse cross analysis
+            ca = result.get("cross_analysis", {}) or {}
+            report.cross_analysis = CrossAnalysis(
+                industry_academic_alignment=ca.get("industry_academic_alignment", ""),
+                academic_engineering_gap=ca.get("academic_engineering_gap", ""),
+                evidence_quality_overview=ca.get("evidence_quality_overview", ""),
+                key_contradictions=self._string_list(ca.get("key_contradictions", [])),
+            )
+
+            # Parse technology relationships
+            tr = result.get("technology_relationships", {}) or {}
+            report.technology_relationships = TechnologyRelationships(
+                complementary_pairs=tr.get("complementary_pairs", []),
+                alternatives=tr.get("alternatives", []),
+                dependency_chains=tr.get("dependency_chains", []),
+            )
 
         self.logger.info(
             "Report generated: %d techs, %d workflows, %d sources",

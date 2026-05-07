@@ -84,6 +84,57 @@ class EvidenceClaim(BaseModel):
     source_urls: list[str] = Field(default_factory=list)
 
 
+class PathTechDetail(BaseModel):
+    """Deep technical analysis of a key technology within a research path."""
+
+    name: str = ""
+    what_it_is: str = ""
+    how_it_works: str = ""
+    pros: list[str] = Field(default_factory=list)
+    cons: list[str] = Field(default_factory=list)
+    implementation_notes: str = ""
+    industry_evidence: str = ""
+    academic_evidence: str = ""
+    engineering_evidence: str = ""
+
+
+class ProsConsSummary(BaseModel):
+    """Strengths and weaknesses summary for a path."""
+
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    best_for: str = ""
+    not_suitable_for: str = ""
+
+
+class PathDeepAnalysis(BaseModel):
+    """Deep analytical breakdown of one research path."""
+
+    path_id: str = ""
+    title: str = ""
+    technical_overview: str = ""
+    key_technologies_detail: list[PathTechDetail] = Field(default_factory=list)
+    cross_references: str = ""
+    pros_cons_summary: ProsConsSummary = Field(default_factory=ProsConsSummary)
+
+
+class CrossAnalysis(BaseModel):
+    """Cross-referencing analysis connecting industry, academic, and engineering evidence."""
+
+    industry_academic_alignment: str = ""
+    academic_engineering_gap: str = ""
+    evidence_quality_overview: str = ""
+    key_contradictions: list[str] = Field(default_factory=list)
+
+
+class TechnologyRelationships(BaseModel):
+    """Relationship map between technologies."""
+
+    complementary_pairs: list[list[str]] = Field(default_factory=list)
+    alternatives: list[list[str]] = Field(default_factory=list)
+    dependency_chains: list[list[str]] = Field(default_factory=list)
+
+
 class ResearchReport(BaseModel):
     """Final comprehensive research report."""
 
@@ -98,6 +149,13 @@ class ResearchReport(BaseModel):
     methodology_summary: str = ""
     decision_matrix: list[DecisionMatrixRow] = Field(default_factory=list)
     key_claims: list[EvidenceClaim] = Field(default_factory=list)
+
+    # Deep analysis
+    path_deep_analysis: list[PathDeepAnalysis] = Field(default_factory=list)
+    cross_analysis: CrossAnalysis = Field(default_factory=CrossAnalysis)
+    technology_relationships: TechnologyRelationships = Field(
+        default_factory=TechnologyRelationships,
+    )
     evidence_gaps: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     confidence_assessment: str = ""

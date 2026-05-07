@@ -60,7 +60,7 @@ api:
     max_content_length: 50000
 
 llm:
-  default_max_tokens: 8192
+  default_max_tokens: 16384
   decompose_temperature: 0.5
   analysis_temperature: 0.2
   synthesis_temperature: 0.3
