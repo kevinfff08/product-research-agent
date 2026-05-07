@@ -13,6 +13,16 @@ from src.models.maturity import TechnologyMaturity, MaturityAssessment
 from src.models.common import MaturityStage
 
 
+_GENERIC_TECH_NAMES = {
+    "python", "rust", "c++", "c", "java", "javascript", "typescript",
+    "go", "ruby", "php", "swift", "kotlin", "scala", "r", "matlab",
+    "hugging face", "github", "gitlab", "docker", "kubernetes", "linux",
+    "windows", "macos", "fastapi", "flask", "django", "react", "vue",
+    "postgresql", "mysql", "redis", "mongodb", "nginx", "apache",
+    "git", "npm", "pip", "conda", "cmake",
+}
+
+
 class MaturityMapper(BaseAgent):
     """Maps discovered technologies to maturity stages."""
 
@@ -100,21 +110,25 @@ class MaturityMapper(BaseAgent):
         """Collect technology names and evidence from all sources."""
         techs: dict[str, dict] = {}
 
+        def _should_include(name: str) -> bool:
+            key = name.lower().strip()
+            if len(key) <= 2 or key in _GENERIC_TECH_NAMES:
+                return False
+            if key.startswith("method:"):
+                return False
+            return True
+
         if industry:
             for product in industry.products:
                 for cap in product.capabilities:
                     name = cap.lower().strip()
-                    if name and len(name) > 2:
+                    if _should_include(name):
                         techs.setdefault(name, {"name": name, "sources": []})
                         techs[name]["sources"].append(f"product:{product.name}")
             for repo in industry.repos:
-                if repo.language:
-                    name = repo.language.lower()
-                    techs.setdefault(name, {"name": name, "sources": []})
-                    techs[name]["sources"].append(f"repo:{repo.name}")
                 for topic in repo.topics:
                     name = topic.lower().strip()
-                    if name and len(name) > 2:
+                    if _should_include(name):
                         techs.setdefault(name, {"name": name, "sources": []})
                         techs[name]["sources"].append(f"repo:{repo.name}")
 
@@ -122,15 +136,8 @@ class MaturityMapper(BaseAgent):
             for ca in engineering.code_analyses:
                 for tech in ca.tech_stack:
                     name = tech.lower().strip()
-                    if name:
+                    if _should_include(name):
                         techs.setdefault(name, {"name": name, "sources": []})
                         techs[name]["sources"].append(f"code:{ca.repo_url}")
-
-        if academic:
-            for paper in academic.papers:
-                if paper.methods:
-                    name = f"method:{paper.title[:50]}"
-                    techs.setdefault(name, {"name": name, "sources": []})
-                    techs[name]["sources"].append(f"paper:{paper.title[:50]}")
 
         return list(techs.values())[:30]  # Limit

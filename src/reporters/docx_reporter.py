@@ -265,8 +265,9 @@ class DocxReporter:
             document.add_heading(f"Research Path: {finding.path_id}", level=2)
             for paper in finding.papers:
                 venue = f" @ {paper.venue}" if paper.venue else ""
+                cite_info = f", {paper.citation_count} citations" if paper.citation_count else ""
                 document.add_paragraph(
-                    f"{paper.title} ({paper.year}{venue}, {paper.citation_count} citations)",
+                    f"{paper.title} ({paper.year}{venue}{cite_info})",
                     style="List Bullet",
                 )
                 self._add_inline_list(document, "Authors", paper.authors[:5])

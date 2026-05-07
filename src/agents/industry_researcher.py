@@ -187,16 +187,27 @@ class IndustryResearcher(BaseAgent):
                 if company is not None:
                     companies.append(company)
 
-        key_insights = self._as_str_list(analysis.get("key_insights", []))
-        blogs = [
-            BlogSummary(
+        source_insights_map: dict[int, list[str]] = {}
+        for si in analysis.get("source_insights", []) or []:
+            if isinstance(si, dict):
+                idx = int(si.get("source_index", 0))
+                pts = self._as_str_list(si.get("key_points", []))
+                if idx and pts:
+                    source_insights_map[idx] = pts
+
+        fallback_insights = self._as_str_list(analysis.get("key_insights", []))
+        blogs: list[BlogSummary] = []
+        for i, source in enumerate(sources[:3], start=1):
+            key_points = source_insights_map.get(i) or fallback_insights[:3] or [
+                source.snippet[:300]
+            ]
+            if not key_points:
+                continue
+            blogs.append(BlogSummary(
                 title=source.title,
                 url=source.url,
-                key_points=key_insights[:5],
-            )
-            for source in sources[: min(len(sources), 3)]
-            if key_insights
-        ]
+                key_points=key_points[:5],
+            ))
         market_trends = str(analysis.get("market_trends", ""))
         return products, companies, blogs, sources, market_trends
 

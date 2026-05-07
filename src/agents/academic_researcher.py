@@ -15,6 +15,15 @@ from src.apis.tavily_client import TavilyClient
 from src.models.plan import ResearchPath, SearchQuery
 from src.models.academic import PaperAnalysis, AcademicResearchResult
 from src.models.common import SourceReference, SourceType
+from src.utils.text_utils import clean_search_query
+
+
+_STOP_WORDS = {
+    "this", "that", "with", "from", "they", "their", "have", "been",
+    "were", "when", "where", "which", "what", "about", "into", "more",
+    "some", "such", "than", "then", "also", "very", "just", "like",
+    "over", "other", "these", "those", "each", "both", "after",
+}
 
 
 class AcademicResearcher(BaseAgent):
@@ -46,6 +55,8 @@ class AcademicResearcher(BaseAgent):
         self.api_concurrency = max(1, api_concurrency)
         self.llm_concurrency = max(1, llm_concurrency)
 
+    _current_path: ResearchPath | None = None
+
     async def run(
         self,
         *,
@@ -53,6 +64,7 @@ class AcademicResearcher(BaseAgent):
         queries: list[SearchQuery] | None = None,
     ) -> AcademicResearchResult:
         """Run academic research for a single path."""
+        self._current_path = path
         self.logger.info("Academic research for path: %s", path.title)
 
         a_queries = queries or [
@@ -96,8 +108,9 @@ class AcademicResearcher(BaseAgent):
         semaphore = asyncio.Semaphore(self.api_concurrency)
 
         async def search_one(sq: SearchQuery) -> list[dict]:
+            clean_q = clean_search_query(sq.query)
             query = (
-                f'{sq.query} paper benchmark evaluation arxiv '
+                f'{clean_q} paper benchmark evaluation arxiv '
                 f'OR "Papers with Code" OR proceedings'
             )
             async with semaphore:
@@ -129,10 +142,11 @@ class AcademicResearcher(BaseAgent):
         semaphore = asyncio.Semaphore(self.api_concurrency)
 
         async def search_one(sq: SearchQuery) -> list[dict]:
+            clean_q = clean_search_query(sq.query)
             async with semaphore:
                 try:
                     papers = await self.arxiv.search(
-                        sq.query,
+                        clean_q,
                         max_results=self.papers_per_query,
                     )
                 except Exception as exc:
@@ -150,7 +164,7 @@ class AcademicResearcher(BaseAgent):
         return self._dedupe_dicts((item for group in groups for item in group), "arxiv_id")
 
     def _merge_papers(self, web_papers: list[dict], arxiv_papers: list[dict]) -> list[dict]:
-        """Merge and deduplicate paper-like results."""
+        """Merge, deduplicate, and filter irrelevant paper-like results."""
         merged: list[dict] = []
         seen: set[str] = set()
         for item in [*arxiv_papers, *web_papers]:
@@ -162,7 +176,36 @@ class AcademicResearcher(BaseAgent):
             if key and key not in seen:
                 seen.add(key)
                 merged.append(item)
-        return merged[: max(self.max_paper_analyses, 1)]
+        return self._filter_relevant(merged)[: max(self.max_paper_analyses, 1)]
+
+    def _filter_relevant(self, papers: list[dict]) -> list[dict]:
+        """Remove papers whose titles show no topical overlap with the path."""
+        if not self._current_path:
+            return papers
+        path_terms = set()
+        for text in [self._current_path.title, self._current_path.description]:
+            path_terms.update(
+                w.lower().strip(",.()[]{}") for w in text.split()
+                if len(w) > 3 and w.lower() not in _STOP_WORDS
+            )
+        if not path_terms:
+            return papers
+
+        kept: list[dict] = []
+        for item in papers:
+            title = (item.get("title") or "").lower()
+            summary = (item.get("summary") or item.get("content", "") or "").lower()
+            combined = f"{title} {summary}"
+            if any(term in combined for term in path_terms):
+                kept.append(item)
+            else:
+                self.logger.debug("Filtered irrelevant paper: %s", item.get("title", "")[:80])
+
+        if len(kept) < len(papers):
+            self.logger.info(
+                "Relevance filter: kept %d/%d papers", len(kept), len(papers),
+            )
+        return kept if kept else papers  # Fall back to all papers if nothing passes
 
     def _build_paper_records(
         self,

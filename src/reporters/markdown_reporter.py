@@ -222,7 +222,8 @@ class MarkdownReporter:
             lines.append(f"### Research Path: {finding.path_id}")
             for paper in finding.papers:
                 venue = f" @ {paper.venue}" if paper.venue else ""
-                lines.append(f"\n**{paper.title}** ({paper.year}{venue}, {paper.citation_count} citations)")
+                cite_info = f", {paper.citation_count} citations" if paper.citation_count else ""
+                lines.append(f"\n**{paper.title}** ({paper.year}{venue}{cite_info})")
                 lines.append(f"- Authors: {', '.join(paper.authors[:5])}")
                 if paper.principles:
                     lines.append(f"- **Principles:** {paper.principles[:300]}")

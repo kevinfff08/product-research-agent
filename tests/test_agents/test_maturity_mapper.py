@@ -74,23 +74,23 @@ def test_collect_technologies(mapper):
     industry = IndustryResearchResult(
         path_id="p1",
         repos=[RepoAnalysis(name="test/repo", language="Python", topics=["machine-learning"])],
+        products=[ProductInfo(name="TestProd", capabilities=["real-time-processing", "nlp"])],
     )
     engineering = EngineeringAnalysis(
         path_id="p1",
-        code_analyses=[CodeAnalysis(repo_url="https://example.com", tech_stack=["FastAPI", "Redis"])],
-    )
-    academic = AcademicResearchResult(
-        path_id="p1",
-        papers=[PaperAnalysis(title="Test Paper", methods="Transformer-based approach")],
+        code_analyses=[CodeAnalysis(repo_url="https://example.com", tech_stack=["PyTorch", "CUDA"])],
     )
 
-    techs = mapper._collect_technologies(industry, academic, engineering)
+    techs = mapper._collect_technologies(industry, None, engineering)
 
     tech_names = [t["name"] for t in techs]
-    assert "python" in tech_names
     assert "machine-learning" in tech_names
-    assert "fastapi" in tech_names
-    assert "redis" in tech_names
+    assert "real-time-processing" in tech_names
+    assert "nlp" in tech_names
+    assert "pytorch" in tech_names
+    assert "cuda" in tech_names
+    # Generic languages and frameworks should be filtered out
+    assert "python" not in tech_names
 
 
 def test_collect_technologies_empty(mapper):

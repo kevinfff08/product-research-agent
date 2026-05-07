@@ -53,6 +53,23 @@ def extract_markdown_sections(markdown: str) -> dict[str, str]:
     return sections
 
 
+_QUERY_NOISE_WORDS = [
+    "arxiv", "github", "gitlab", "hugging face", "semantic scholar",
+    "papers with code", "site:arxiv.org", "site:github.com",
+    "site:gitlab.com", "site:huggingface.co",
+    "open source implementation repository",
+]
+
+
+def clean_search_query(query: str) -> str:
+    """Remove platform names and filler words that pollute search queries."""
+    cleaned = query
+    for word in _QUERY_NOISE_WORDS:
+        cleaned = re.sub(rf"\b{re.escape(word)}\b", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b(19|20)\d{2}\b", "", cleaned)  # stray years
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 def normalize_url(url: str) -> str:
     """Normalize a URL by removing trailing slashes and fragments."""
     url = url.split("#")[0]  # Remove fragment
