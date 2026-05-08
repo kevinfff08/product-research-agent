@@ -83,3 +83,4 @@ def test_query_optimization_deduplicates_and_expands(planner, sample_decompositi
     assert len(matching) == 1
     assert matching[0].priority == 0.9
     assert {"code_web", "academic_web", "openalex", "arxiv"}.issubset({q.source for q in optimized})
+    assert all("recent preprint benchmark" not in q.query for q in optimized if q.source == "arxiv")

@@ -86,6 +86,9 @@ def orchestrator(tmp_path, mock_config):
 @pytest.mark.asyncio
 async def test_run_full_pipeline(orchestrator):
     """Test the full pipeline with mocked components."""
+    progress_events = []
+    orchestrator.progress_callback = progress_events.append
+
     # Mock decomposer LLM response
     orchestrator.llm.generate_json.side_effect = [
         # 1. Decomposer
@@ -148,6 +151,17 @@ async def test_run_full_pipeline(orchestrator):
     assert (session_dir / "queries_by_path.json").exists()
     assert (session_dir / "paths" / "p1" / "status.json").exists()
     assert (session_dir / "events.jsonl").exists()
+    events = [
+        json.loads(line)
+        for line in (session_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert any(e.get("event") == "pipeline_stage" and e.get("status") == "decomposing" for e in events)
+    assert any(e.get("event") == "pipeline_stage" and e.get("status") == "writing_outputs" for e in events)
+    assert any(e.get("event") == "path_status" and e.get("status") == "running" for e in events)
+    assert any(e.get("event") == "path_subagent_status" and e.get("agent") == "academic" for e in events)
+    assert any(e.get("event") == "pipeline_stage" and e.get("status") == "decomposing" for e in progress_events)
+    assert any(e.get("event") == "path_status" and e.get("status") == "running" for e in progress_events)
+    assert any(e.get("event") == "path_subagent_status" and e.get("agent") == "academic" for e in progress_events)
 
 
 @pytest.mark.asyncio

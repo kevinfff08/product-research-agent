@@ -63,7 +63,7 @@ class TestInputModels:
         assert req.raw_input == "AI code review tool"
         assert req.depth == "comprehensive"
         assert req.output_format == "markdown"
-        assert req.max_paths == 5
+        assert req.max_paths == 1
 
     def test_research_request_title_and_description(self):
         req = ResearchRequest(

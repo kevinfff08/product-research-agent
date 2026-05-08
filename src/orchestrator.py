@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 from dotenv import load_dotenv
@@ -42,6 +42,21 @@ from src.utils.naming import build_run_name
 load_dotenv()
 logger = get_logger("orchestrator")
 
+ProgressCallback = Callable[[dict[str, Any]], None]
+
+_PIPELINE_STEPS: tuple[tuple[str, str], ...] = (
+    ("preflight", "检查 LLM 代理与模型配置"),
+    ("decomposing", "理解产品创意并生成研究路径"),
+    ("planning", "生成检索计划"),
+    ("researching", "并行执行产业、学术和工程调研"),
+    ("scoring", "评估机构声誉与证据质量"),
+    ("mapping_maturity", "绘制技术成熟度"),
+    ("generating_report", "综合分析并生成报告"),
+    ("writing_outputs", "写入 Markdown/DOCX 输出"),
+)
+_STEP_INDEX = {key: idx for idx, (key, _label) in enumerate(_PIPELINE_STEPS, start=1)}
+_STEP_LABEL = {key: label for key, label in _PIPELINE_STEPS}
+
 
 _DEPTH_PROFILES: dict[str, dict[str, int]] = {
     "quick": {
@@ -54,7 +69,7 @@ _DEPTH_PROFILES: dict[str, dict[str, int]] = {
         "max_code_queries_per_path": 2,
         "max_academic_queries_per_path": 2,
         "max_openalex_queries_per_path": 2,
-        "max_arxiv_queries_per_path": 2,
+        "max_arxiv_queries_per_path": 1,
         "max_papers_per_query": 5,
         "max_papers_per_path": 4,
         "max_repos_per_path": 4,
@@ -70,7 +85,7 @@ _DEPTH_PROFILES: dict[str, dict[str, int]] = {
         "max_code_queries_per_path": 4,
         "max_academic_queries_per_path": 3,
         "max_openalex_queries_per_path": 3,
-        "max_arxiv_queries_per_path": 3,
+        "max_arxiv_queries_per_path": 2,
         "max_papers_per_query": 8,
         "max_papers_per_path": 8,
         "max_repos_per_path": 6,
@@ -86,7 +101,7 @@ _DEPTH_PROFILES: dict[str, dict[str, int]] = {
         "max_code_queries_per_path": 5,
         "max_academic_queries_per_path": 4,
         "max_openalex_queries_per_path": 4,
-        "max_arxiv_queries_per_path": 4,
+        "max_arxiv_queries_per_path": 2,
         "max_papers_per_query": 10,
         "max_papers_per_path": 12,
         "max_repos_per_path": 8,
@@ -103,11 +118,13 @@ class Orchestrator:
         config_path: str | Path = "config/default.yaml",
         data_dir: str | Path = "data",
         output_dir: str | Path = "output",
+        progress_callback: ProgressCallback | None = None,
     ):
         self.config = self._load_config(config_path)
         self.store = LocalStore(data_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.progress_callback = progress_callback
         # Build LLM client
         llm_config = self.config.get("llm", {})
         self.llm = LLMClient(
@@ -217,10 +234,17 @@ class Orchestrator:
         )
 
         try:
+            self._emit_progress(
+                "pipeline_started",
+                session_id=session_id,
+                message="开始调研流水线",
+                total_steps=len(_PIPELINE_STEPS),
+            )
+            self._set_stage(session_id, "preflight")
             self._preflight_llm(session_id)
 
             # Step 1: Decompose
-            self.store.update_session_status(session_id, "decomposing")
+            self._set_stage(session_id, "decomposing")
             decomposition = self.decomposer.run(
                 raw_input=request.raw_input,
                 max_paths=effective_max_paths,
@@ -232,7 +256,12 @@ class Orchestrator:
 
             if not decomposition.paths:
                 logger.error("No paths generated from decomposition")
-                self.store.update_session_status(session_id, "failed")
+                self._set_stage(
+                    session_id,
+                    "failed",
+                    message="研究路径生成失败",
+                    record_status=True,
+                )
                 return ResearchReport(
                     title="Failed Research",
                     session_id=session_id,
@@ -241,7 +270,7 @@ class Orchestrator:
                 )
 
             # Step 2: Plan
-            self.store.update_session_status(session_id, "planning")
+            self._set_stage(session_id, "planning")
             weights = ResearchWeight(
                 industry=request.weights.industry if request.weights else 0.60,
                 academic=request.weights.academic if request.weights else 0.25,
@@ -258,7 +287,12 @@ class Orchestrator:
             )
 
             # Step 3: Parallel research
-            self.store.update_session_status(session_id, "researching")
+            self._set_stage(
+                session_id,
+                "researching",
+                message=f"并行调研 {len(decomposition.paths)} 条研究路径",
+                path_count=len(decomposition.paths),
+            )
             max_parallel_paths = depth_settings["max_parallel_paths"]
             path_semaphore = asyncio.Semaphore(max(1, int(max_parallel_paths)))
             research_tasks = [
@@ -315,13 +349,14 @@ class Orchestrator:
                 self.store.save_model(f"research/{session_id}/engineering_{i}.json", er)
 
             # Step 4: Reputation + Maturity
-            self.store.update_session_status(session_id, "scoring")
+            self._set_stage(session_id, "scoring")
             reputation_report = self.reputation_scorer.run(
                 industry_results=industry_results,
                 academic_results=academic_results,
             )
             self.store.save_model(f"research/{session_id}/reputation.json", reputation_report)
 
+            self._set_stage(session_id, "mapping_maturity")
             maturity_assessments = []
             for path in decomposition.paths:
                 ind = industry_by_path.get(path.path_id)
@@ -338,7 +373,7 @@ class Orchestrator:
                 self.store.save_model(f"research/{session_id}/maturity_{i}.json", ma)
 
             # Step 5: Generate report
-            self.store.update_session_status(session_id, "generating_report")
+            self._set_stage(session_id, "generating_report")
             report = self.report_generator.run(
                 decomposition=decomposition,
                 industry_results=industry_results,
@@ -353,10 +388,20 @@ class Orchestrator:
             self.store.save_model(f"research/{session_id}/report.json", report)
 
             # Step 6: Write requested outputs
+            self._set_stage(session_id, "writing_outputs")
             output_paths = self._write_outputs(report, request.output_format)
 
             self.store.update_session_status(session_id, "completed")
             self._record_event(session_id, "pipeline_completed", outputs=[str(p) for p in output_paths])
+            self._emit_progress(
+                "pipeline_completed",
+                session_id=session_id,
+                status="completed",
+                message="调研流水线完成",
+                outputs=[str(p) for p in output_paths],
+                step=len(_PIPELINE_STEPS),
+                total_steps=len(_PIPELINE_STEPS),
+            )
             logger.info(
                 "Research pipeline complete: %s",
                 ", ".join(str(p) for p in output_paths),
@@ -372,11 +417,22 @@ class Orchestrator:
             )
             self._record_event(session_id, "pipeline_failed", error=str(exc))
             self.store.update_session_status(session_id, "failed")
+            self._emit_progress(
+                "pipeline_failed",
+                session_id=session_id,
+                status="failed",
+                message=f"流水线失败：{exc}",
+                error=str(exc),
+            )
             raise
 
         finally:
             # Clean up API clients
             await self._cleanup()
+
+    def propose_paths(self, *, raw_input: str, max_paths: int) -> Any:
+        """Generate candidate research paths without executing the full pipeline."""
+        return self.decomposer.run(raw_input=raw_input, max_paths=max(1, max_paths))
 
     def _group_queries(self, plan: ResearchPlan) -> dict[str, dict[str, list[SearchQuery]]]:
         """Group search queries by path_id and source."""
@@ -419,6 +475,41 @@ class Orchestrator:
             {"event": event, **payload},
         )
 
+    def _emit_progress(self, event: str, **payload: Any) -> None:
+        if self.progress_callback is None:
+            return
+        try:
+            self.progress_callback({"event": event, **payload})
+        except Exception as exc:
+            logger.debug("Progress callback failed: %s", exc)
+
+    def _set_stage(
+        self,
+        session_id: str,
+        status: str,
+        *,
+        message: str | None = None,
+        record_status: bool = True,
+        **payload: Any,
+    ) -> None:
+        if record_status:
+            self.store.update_session_status(session_id, status)
+        label = message or _STEP_LABEL.get(status, status)
+        event_payload = {
+            "status": status,
+            "message": label,
+            **payload,
+        }
+        if status in _STEP_INDEX:
+            event_payload["step"] = _STEP_INDEX[status]
+            event_payload["total_steps"] = len(_PIPELINE_STEPS)
+        self._record_event(session_id, "pipeline_stage", **event_payload)
+        self._emit_progress(
+            "pipeline_stage",
+            session_id=session_id,
+            **event_payload,
+        )
+
     @staticmethod
     def _serialize_grouped_queries(
         path_queries: dict[str, dict[str, list[SearchQuery]]],
@@ -452,7 +543,28 @@ class Orchestrator:
                 {path.path_id: queries_by_source},
             ).get(path.path_id, {})
         self.store.save_json(f"{path_dir}/status.json", payload)
-        self._record_event(session_id, "path_status", path_id=path.path_id, status=status)
+        query_counts = {
+            source: len(queries)
+            for source, queries in (queries_by_source or {}).items()
+        }
+        self._record_event(
+            session_id,
+            "path_status",
+            path_id=path.path_id,
+            path_title=path.title,
+            status=status,
+            query_counts=query_counts,
+            errors=errors or {},
+        )
+        self._emit_progress(
+            "path_status",
+            session_id=session_id,
+            path_id=path.path_id,
+            path_title=path.title,
+            status=status,
+            query_counts=query_counts,
+            errors=errors or {},
+        )
 
     def _persist_path_results(
         self,
@@ -514,13 +626,30 @@ class Orchestrator:
                 len(academic_queries),
             )
             results = await asyncio.gather(
-                self.industry_researcher.run(
-                    path=path,
-                    web_queries=web_queries,
+                self._run_path_subagent(
+                    session_id,
+                    path,
+                    "industry",
+                    "产业调研",
+                    self.industry_researcher.run(
+                        path=path,
+                        web_queries=web_queries,
+                    ),
                 ),
-                self.academic_researcher.run(path=path, queries=academic_queries),
-                self.engineering_analyst.run(path=path, code_queries=code_queries),
-                return_exceptions=True,
+                self._run_path_subagent(
+                    session_id,
+                    path,
+                    "academic",
+                    "学术调研",
+                    self.academic_researcher.run(path=path, queries=academic_queries),
+                ),
+                self._run_path_subagent(
+                    session_id,
+                    path,
+                    "engineering",
+                    "工程分析",
+                    self.engineering_analyst.run(path=path, code_queries=code_queries),
+                ),
             )
 
         labels = ["industry", "academic", "engineering"]
@@ -542,6 +671,68 @@ class Orchestrator:
             queries_by_source,
         )
         return path.path_id, normalized[0], normalized[1], normalized[2]
+
+    async def _run_path_subagent(
+        self,
+        session_id: str,
+        path: Any,
+        label: str,
+        display_name: str,
+        coroutine: Any,
+    ) -> Any:
+        self._record_path_subagent_status(
+            session_id,
+            path,
+            label,
+            display_name,
+            "running",
+        )
+        try:
+            result = await coroutine
+        except Exception as exc:
+            self._record_path_subagent_status(
+                session_id,
+                path,
+                label,
+                display_name,
+                "failed",
+                error=str(exc),
+            )
+            return exc
+        self._record_path_subagent_status(
+            session_id,
+            path,
+            label,
+            display_name,
+            "completed",
+        )
+        return result
+
+    def _record_path_subagent_status(
+        self,
+        session_id: str,
+        path: Any,
+        label: str,
+        display_name: str,
+        status: str,
+        *,
+        error: str = "",
+    ) -> None:
+        payload = {
+            "path_id": path.path_id,
+            "path_title": path.title,
+            "agent": label,
+            "agent_name": display_name,
+            "status": status,
+        }
+        if error:
+            payload["error"] = error
+        self._record_event(session_id, "path_subagent_status", **payload)
+        self._emit_progress(
+            "path_subagent_status",
+            session_id=session_id,
+            **payload,
+        )
 
     def _write_outputs(self, report: ResearchReport, output_format: str) -> list[Path]:
         """Write report outputs in per-run subdirectories matching the log naming convention."""

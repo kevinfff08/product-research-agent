@@ -79,15 +79,37 @@ def test_status_with_data(tmp_path):
 
 def test_start_guided_flow(monkeypatch, tmp_path):
     class FakeOrchestrator:
-        def __init__(self, config_path, data_dir="data", output_dir="output"):
+        def __init__(
+            self,
+            config_path,
+            data_dir="data",
+            output_dir="output",
+            progress_callback=None,
+        ):
             self.output_dir = Path(output_dir)
             self.output_paths = []
+            self.progress_callback = progress_callback
 
         async def run(self, request):
+            if self.progress_callback:
+                self.progress_callback({
+                    "event": "pipeline_stage",
+                    "status": "decomposing",
+                    "message": "理解产品创意并生成研究路径",
+                    "step": 2,
+                    "total_steps": 8,
+                })
             run_dir = self.output_dir / request.run_name
             run_dir.mkdir(parents=True, exist_ok=True)
             output = run_dir / f"{request.run_name}.md"
             self.output_paths = [output]
+            if self.progress_callback:
+                self.progress_callback({
+                    "event": "pipeline_completed",
+                    "message": "调研流水线完成",
+                    "step": 8,
+                    "total_steps": 8,
+                })
             return ResearchReport(
                 title=f"Technology Landscape: {request.title}",
                 session_id=request.run_name,
@@ -113,7 +135,7 @@ def test_start_guided_flow(monkeypatch, tmp_path):
             "END\n"
             "latency, open source\n"
             "quick\n"
-            "2\n"
+            "n\n"
             "markdown\n"
         ),
     )
@@ -121,4 +143,5 @@ def test_start_guided_flow(monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert "标题式输入" in result.stdout
     assert "二阶段细致描述" in result.stdout
+    assert "理解产品创意并生成研究路径" in result.stdout
     assert "20260504_120000_Test_Title" in result.stdout

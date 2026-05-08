@@ -59,6 +59,22 @@ async def test_search_empty(arxiv):
 
 
 @pytest.mark.asyncio
+async def test_search_rate_limit_opens_circuit(arxiv, monkeypatch):
+    monkeypatch.setattr("src.apis.arxiv_client._MIN_INTERVAL", 0.0)
+    monkeypatch.setattr("src.apis.arxiv_client._MAX_JITTER", 0.0)
+    monkeypatch.setattr("src.apis.arxiv_client._RATE_LIMIT_COOLDOWN", 0.0)
+
+    with respx.mock:
+        route = respx.get("https://export.arxiv.org/api/query").mock(
+            return_value=httpx.Response(429, text="Rate exceeded.")
+        )
+        with pytest.raises(RuntimeError, match="temporarily disabled"):
+            await arxiv.search("LLM code review")
+
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
 async def test_parse_response(arxiv):
     papers = arxiv._parse_response(MOCK_ARXIV_XML)
     assert len(papers) == 1

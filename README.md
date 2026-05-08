@@ -10,10 +10,12 @@
 - 交互式启动：默认入口是 `start` 向导，每一轮都会提示必填/选填、输入格式和示例。
 - 多 Provider LLM：支持 `openai`、`deepseek`、`google` 三类 OpenAI-compatible 调用，也保留 CLIProxyAPI 的 `setup-token` 模式；`setup-token` 模式会启用全局 LLM 并发上限，避免本地代理认证和路由被并发打爆。
 - 并行子 Agent：每个研究路径都会并发运行产业、学术、工程三个子 Agent；每个子 Agent 内部也会并发检索和分析。
-- 三层学术搜索：OpenAlex（高影响力已发表论文，含引用数和会议/期刊分级）+ arXiv（最新预印本，含频率限制）+ Tavily（学术网页搜索），自动过滤无关论文。
-- 扩展型搜索规划：围绕产品、竞品、开源仓库、论文、benchmark、社区反馈生成多意图英文查询，自动清理平台名、中文残留和无效关键词；最终报告仍保持中文。
+- 三层学术搜索：OpenAlex（高影响力已发表论文，含引用数和会议/期刊分级）+ arXiv（少量核心预印本补充，带全局冷却和熔断）+ Tavily（学术网页搜索），自动过滤无关论文。
+- 扩展型搜索规划：围绕产品、竞品、开源仓库、论文、方法、评测、社区反馈生成多意图英文查询，自动清理平台名、中文残留和无效关键词；arXiv 查询只保留核心 topic，不机械追加后缀；最终报告仍保持中文。
 - 中文深度报告：所有提示词和报告输出均使用中文。每项技术含"是什么/原理/优劣/实现建议/证据"详解；每条路线含技术总览、核心技术详解、交叉关联、优劣势总结；额外包含技术关系图谱（互补/替代/依赖链）和交叉分析（产业-学术-工程互证与矛盾）章节。
 - 决策型报告：报告包含摘要、研究问题与方法、决策矩阵、关键论断与证据、技术全景、技术关系图谱、路线深度分析、交叉分析、成熟度图谱、实施工作流、可行性评估、置信度与证据缺口、推荐策略等章节。
+- 单路径优先：默认只做 1 条综合研究路径。只有用户明确要求多路径时，系统才会先完成单路径初轮调研，再展示候选技术路线并等待确认，确认后才执行分路径调研。
+- 终端进度可视化：运行时会显示 `[1/8]` 到 `[8/8]` 的真实流水线阶段，并在调研阶段显示每条 Path 及产业/学术/工程子 Agent 的开始、完成或失败状态。
 - 统一命名与归档：日志、数据和报告输出均使用 `日期时间_标题` 命名。每次运行在 `output/` 下创建独立子目录存放报告，`data/research/<session_id>/` 会保存拆解、计划、查询、每条路线的子 Agent 结果、状态事件和错误信息，便于失败后复盘与恢复。
 - 独立日志：每次运行写入一个独立日志文件，不按文件大小轮转。
 
@@ -44,7 +46,7 @@ python -m src start
 2. 二阶段细致描述（必填）：可输入多段文字，单独一行 `END` 结束。
 3. 关注重点（选填）：逗号分隔，例如“低延迟, 开源实现, 学术评测”。
 4. 调研深度（选填）：`quick`、`comprehensive`、`deep`。
-5. 最大研究路径数（选填）：1-10 的整数。
+5. 是否在初轮单路径调研后评估分路径计划：默认否；选择是后再输入候选分路径数量上限。
 6. 输出格式（选填）：`markdown`、`docx`、`both`。
 
 ## 非交互命令
@@ -52,8 +54,10 @@ python -m src start
 如果已经知道完整输入，可以直接运行：
 
 ```bash
-python -m src research "实时视频翻译工具" --description "面向跨国会议团队，要求实时字幕、语音翻译、低延迟和会议软件集成。" --depth deep --max-paths 3 --format both
+python -m src research "实时视频翻译工具" --description "面向跨国会议团队，要求实时字幕、语音翻译、低延迟和会议软件集成。" --depth deep --format both
 ```
+
+非交互命令默认 `--max-paths 1`。如果显式传入 `--max-paths 3` 这类多路径数量，程序会先跑单路径初轮调研，再在终端显示候选路线并请求确认。
 
 常用管理命令：
 
@@ -112,14 +116,14 @@ cp .env.example .env
 标题 + 详细描述
   |
   v
-IdeaDecomposer
+IdeaDecomposer（默认 1 条综合路径）
   |
   v
 ResearchPlanner
   |
   +--> Path 1: IndustryResearcher || AcademicResearcher || EngineeringAnalyst
-  +--> Path 2: IndustryResearcher || AcademicResearcher || EngineeringAnalyst
-  +--> Path N: IndustryResearcher || AcademicResearcher || EngineeringAnalyst
+  |
+  +--> 如显式请求多路径：初轮报告后展示候选 Path 1..N，确认后再执行多路径调研
   |
   v
 ReputationScorer + MaturityMapper
@@ -137,8 +141,8 @@ ReportGenerator
 
 ```text
 src/
-  cli.py                  # Typer CLI 和 start 交互式向导
-  orchestrator.py         # 异步流水线协调器
+  cli.py                  # Typer CLI、start 交互式向导和终端进度显示
+  orchestrator.py         # 异步流水线协调器，发出结构化进度事件
   logging_config.py       # 非轮转日志配置
   llm/client.py           # OpenAI-compatible/CLIProxyAPI LLM 客户端
   agents/                 # 调研子 Agent（分解、规划、产业、学术OpenAlex+arXiv+Tavily、工程、声誉、成熟度、报告生成）
@@ -150,7 +154,7 @@ src/
 config/default.yaml       # 非密钥运行配置
 docs/research/            # 当前调研和设计依据
 docs/archive/             # 过时说明和历史调研资料
-tests/                    # pytest 测试（155 个）
+tests/                    # pytest 测试
 ```
 
 ## 输出和日志

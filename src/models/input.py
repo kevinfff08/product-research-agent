@@ -39,8 +39,8 @@ class ResearchRequest(BaseModel):
         description="Output format: 'markdown', 'docx', or 'both'",
     )
     max_paths: int = Field(
-        default=5,
-        description="Maximum number of research paths to explore",
+        default=1,
+        description="Maximum number of research paths to explore; defaults to one integrated path",
         ge=1,
         le=10,
     )

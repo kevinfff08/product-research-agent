@@ -10,7 +10,7 @@ research:
       max_code_queries_per_path: 2
       max_academic_queries_per_path: 2
       max_openalex_queries_per_path: 2
-      max_arxiv_queries_per_path: 2
+      max_arxiv_queries_per_path: 1
       max_papers_per_query: 5
       max_papers_per_path: 4
       max_repos_per_path: 4
@@ -25,7 +25,7 @@ research:
       max_code_queries_per_path: 4
       max_academic_queries_per_path: 3
       max_openalex_queries_per_path: 3
-      max_arxiv_queries_per_path: 3
+      max_arxiv_queries_per_path: 2
       max_papers_per_query: 8
       max_papers_per_path: 8
       max_repos_per_path: 6
@@ -40,7 +40,7 @@ research:
       max_code_queries_per_path: 5
       max_academic_queries_per_path: 4
       max_openalex_queries_per_path: 4
-      max_arxiv_queries_per_path: 4
+      max_arxiv_queries_per_path: 2
       max_papers_per_query: 10
       max_papers_per_path: 12
       max_repos_per_path: 8
