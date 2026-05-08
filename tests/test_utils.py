@@ -5,7 +5,14 @@ from __future__ import annotations
 import pytest
 
 from src.utils.json_repair import repair_json
-from src.utils.text_utils import truncate, clean_html_to_text, extract_markdown_sections, normalize_url
+from src.utils.text_utils import (
+    truncate,
+    clean_html_to_text,
+    extract_markdown_sections,
+    normalize_url,
+    english_search_query,
+    is_useful_english_query,
+)
 
 
 class TestJsonRepair:
@@ -113,3 +120,14 @@ class TestNormalizeUrl:
 
     def test_clean_url(self):
         assert normalize_url("https://example.com/page") == "https://example.com/page"
+
+
+class TestEnglishSearchQuery:
+    def test_translates_common_chinese_terms(self):
+        query = english_search_query("文本到图像生成 benchmark evaluation survey")
+        assert "text to image generation" in query
+        assert "文本" not in query
+
+    def test_rejects_generic_leftovers(self):
+        assert not is_useful_english_query("survey benchmark")
+        assert is_useful_english_query("document to PowerPoint generation benchmark")

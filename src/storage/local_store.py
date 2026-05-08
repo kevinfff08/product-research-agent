@@ -96,6 +96,18 @@ class LocalStore:
         logger.debug("Saved text: %s (%d bytes)", relative_path, path.stat().st_size)
         return path
 
+    def append_jsonl(self, relative_path: str, item: dict) -> Path:
+        """Append one JSON object to a JSONL file relative to data_dir."""
+        path = self.data_dir / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = dict(item)
+        payload.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, ensure_ascii=False, default=str))
+            fh.write("\n")
+        logger.debug("Appended JSONL: %s", relative_path)
+        return path
+
     def list_sessions(self) -> list[dict]:
         """List all research sessions with metadata."""
         research_dir = self.data_dir / "research"

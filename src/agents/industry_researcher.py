@@ -20,6 +20,7 @@ from src.models.industry import (
 )
 from src.models.common import MaturityStage
 from src.models.common import SourceReference, SourceType
+from src.utils.text_utils import english_search_query, is_useful_english_query
 
 
 class IndustryResearcher(BaseAgent):
@@ -97,10 +98,14 @@ class IndustryResearcher(BaseAgent):
         semaphore = asyncio.Semaphore(self.api_concurrency)
 
         async def search_one(sq: SearchQuery) -> list[dict]:
+            query = english_search_query(sq.query)
+            if not is_useful_english_query(query):
+                self.logger.debug("Skipping industry query (not useful English): %s", sq.query[:80])
+                return []
             async with semaphore:
                 try:
                     data = await self.tavily.search(
-                        sq.query,
+                        query,
                         search_depth="basic",
                         max_results=self.web_results_per_query,
                         include_answer=False,
@@ -110,7 +115,7 @@ class IndustryResearcher(BaseAgent):
                     return []
             results = []
             for r in data.get("results", []):
-                r["_query"] = sq.query
+                r["_query"] = query
                 r["_path_id"] = sq.path_id
                 r["_intent"] = sq.intent
                 results.append(r)
@@ -159,17 +164,21 @@ class IndustryResearcher(BaseAgent):
             }
             for i, r in enumerate(selected)
         ]
-        analysis = await self._call_llm_json_async(
-            prompt=self._render_template(
-                "analyze_industry_batch",
-                {
-                    "path_title": path.title,
-                    "key_questions": "; ".join(path.key_questions[:3]),
-                    "sources_json": json.dumps(source_payload, ensure_ascii=False, indent=2),
-                },
-            ),
-            temperature=0.2,
-        )
+        try:
+            analysis = await self._call_llm_json_async(
+                prompt=self._render_template(
+                    "analyze_industry_batch",
+                    {
+                        "path_title": path.title,
+                        "key_questions": "; ".join(path.key_questions[:3]),
+                        "sources_json": json.dumps(source_payload, ensure_ascii=False, indent=2),
+                    },
+                ),
+                temperature=0.2,
+            )
+        except Exception as exc:
+            self.logger.warning("Industry batch analysis failed for '%s': %s", path.title, exc)
+            return [], [], [], sources, ""
 
         if not analysis or not isinstance(analysis, dict):
             return [], [], [], sources, ""

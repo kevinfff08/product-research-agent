@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import time
+import threading
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -46,10 +48,16 @@ _ROUTING_ERROR_MARKERS = (
     "invalid model",
     "model does not exist",
 )
+_NON_RETRYABLE_ERROR_MARKERS = (
+    *_ROUTING_ERROR_MARKERS,
+    "auth_unavailable",
+    "no auth available",
+)
 _RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 _RETRY_MAX_ATTEMPTS = 3
 _RETRY_BASE_DELAY = 2.0
 _RETRY_MAX_DELAY = 30.0
+_DEFAULT_SETUP_TOKEN_MAX_CONCURRENCY = 2
 
 
 class LLMClient:
@@ -60,6 +68,9 @@ class LLMClient:
     - ``api-key``: call provider APIs selected by ``LLM_PROVIDER``.
     """
 
+    _setup_token_semaphores: dict[tuple[str, int], threading.BoundedSemaphore] = {}
+    _setup_token_semaphores_lock = threading.Lock()
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -67,6 +78,7 @@ class LLMClient:
         max_tokens: int = 8192,
         base_url: str | None = None,
         timeout: float = 300.0,
+        setup_token_max_concurrency: int | None = None,
     ) -> None:
         self.provider = os.environ.get("LLM_PROVIDER", "openai").strip().lower()
         if self.provider not in _PROVIDER_DEFAULTS:
@@ -81,6 +93,9 @@ class LLMClient:
         self.model = model or self._default_model_for_mode()
         self.max_tokens = max_tokens
         self.timeout = timeout
+        self.setup_token_max_concurrency = self._setup_token_concurrency(
+            setup_token_max_concurrency,
+        )
         self._client: httpx.Client | None = None
 
         if self.mode == "setup-token":
@@ -92,6 +107,10 @@ class LLMClient:
                 self.provider,
                 self.base_url,
                 self.model,
+            )
+            logger.info(
+                "setup-token LLM concurrency limit: %d in-flight request(s)",
+                self.setup_token_max_concurrency,
             )
         else:
             base_url_env = str(provider_config["base_url_env"])
@@ -128,6 +147,18 @@ class LLMClient:
         provider_config = _PROVIDER_DEFAULTS[self.provider]
         default_model = str(provider_config["model"])
         return os.environ.get("LLM_MODEL") or default_model
+
+    @staticmethod
+    def _setup_token_concurrency(value: int | None) -> int:
+        raw = value if value is not None else os.environ.get(
+            "LLM_SETUP_TOKEN_MAX_CONCURRENCY",
+            str(_DEFAULT_SETUP_TOKEN_MAX_CONCURRENCY),
+        )
+        try:
+            parsed = int(raw)
+        except (TypeError, ValueError):
+            parsed = _DEFAULT_SETUP_TOKEN_MAX_CONCURRENCY
+        return max(1, parsed)
 
     @property
     def client(self) -> httpx.Client:
@@ -166,6 +197,52 @@ class LLMClient:
                 models.append(str(item["id"]))
         return models
 
+    def preflight(self) -> dict[str, Any]:
+        """Validate setup-token proxy reachability and model routing before work starts."""
+        if self.mode != "setup-token":
+            return {
+                "mode": self.mode,
+                "checked": False,
+                "ok": True,
+                "message": "Preflight skipped outside setup-token mode.",
+            }
+
+        try:
+            models = self.list_models()
+        except Exception as exc:
+            raise RuntimeError(
+                f"CLIProxyAPI preflight failed: could not reach {self.base_url}/models. "
+                f"Start CLIProxyAPI or set LLM_PROXY_URL. Original error: {exc}"
+            ) from exc
+
+        if models and self.model not in models:
+            raise RuntimeError(
+                f"CLIProxyAPI preflight failed: model '{self.model}' is not advertised by "
+                f"{self.base_url}/models. Available models: {', '.join(models[:20])}"
+            )
+
+        return {
+            "mode": self.mode,
+            "checked": True,
+            "ok": True,
+            "base_url": self.base_url,
+            "model": self.model,
+            "available_models": models,
+            "setup_token_max_concurrency": self.setup_token_max_concurrency,
+        }
+
+    def _setup_token_request_context(self):
+        """Return a process-wide concurrency guard for setup-token proxy calls."""
+        if self.mode != "setup-token":
+            return nullcontext()
+        key = (self.base_url, self.setup_token_max_concurrency)
+        with self._setup_token_semaphores_lock:
+            semaphore = self._setup_token_semaphores.get(key)
+            if semaphore is None:
+                semaphore = threading.BoundedSemaphore(self.setup_token_max_concurrency)
+                self._setup_token_semaphores[key] = semaphore
+        return semaphore
+
     def generate(
         self,
         prompt: str,
@@ -200,56 +277,59 @@ class LLMClient:
             "max_tokens": tokens,
         }
 
-        last_exc: Exception | None = None
-        t0 = time.perf_counter()
-        for attempt in range(1, _RETRY_MAX_ATTEMPTS + 1):
-            try:
-                response = self.client.post("/chat/completions", json=payload)
-                elapsed = time.perf_counter() - t0
-                if response.status_code in _RETRYABLE_STATUS_CODES and attempt < _RETRY_MAX_ATTEMPTS:
-                    delay = min(_RETRY_BASE_DELAY * (2 ** (attempt - 1)), _RETRY_MAX_DELAY)
-                    logger.warning(
-                        "LLM HTTP %d on attempt %d/%d, retrying in %.1fs...",
-                        response.status_code, attempt, _RETRY_MAX_ATTEMPTS, delay,
+        with self._setup_token_request_context():
+            last_exc: Exception | None = None
+            t0 = time.perf_counter()
+            for attempt in range(1, _RETRY_MAX_ATTEMPTS + 1):
+                try:
+                    response = self.client.post("/chat/completions", json=payload)
+                    elapsed = time.perf_counter() - t0
+                    if response.status_code >= 400 and self._is_non_retryable_api_error(response):
+                        self._raise_api_error(response, elapsed)
+                    if response.status_code in _RETRYABLE_STATUS_CODES and attempt < _RETRY_MAX_ATTEMPTS:
+                        delay = min(_RETRY_BASE_DELAY * (2 ** (attempt - 1)), _RETRY_MAX_DELAY)
+                        logger.warning(
+                            "LLM HTTP %d on attempt %d/%d, retrying in %.1fs...",
+                            response.status_code, attempt, _RETRY_MAX_ATTEMPTS, delay,
+                        )
+                        time.sleep(delay)
+                        t0 = time.perf_counter()
+                        continue
+                    if response.status_code >= 400:
+                        self._raise_api_error(response, elapsed)
+                    data = response.json()
+                    text = self._extract_message_text(data)
+                    usage = data.get("usage") or {}
+                    logger.info(
+                        "LLM response: %.1fs, input_tokens=%s, output_tokens=%s",
+                        elapsed,
+                        usage.get("prompt_tokens", "?"),
+                        usage.get("completion_tokens", "?"),
                     )
-                    time.sleep(delay)
-                    t0 = time.perf_counter()
-                    continue
-                if response.status_code >= 400:
-                    self._raise_api_error(response, elapsed)
-                data = response.json()
-                text = self._extract_message_text(data)
-                usage = data.get("usage") or {}
-                logger.info(
-                    "LLM response: %.1fs, input_tokens=%s, output_tokens=%s",
-                    elapsed,
-                    usage.get("prompt_tokens", "?"),
-                    usage.get("completion_tokens", "?"),
-                )
-                return text
-            except (httpx.ReadTimeout, httpx.ConnectError,
-                    httpx.RemoteProtocolError, httpx.ReadError) as exc:
-                last_exc = exc
-                elapsed = time.perf_counter() - t0
-                if attempt < _RETRY_MAX_ATTEMPTS:
-                    delay = min(_RETRY_BASE_DELAY * (2 ** (attempt - 1)), _RETRY_MAX_DELAY)
-                    logger.warning(
-                        "LLM %s on attempt %d/%d after %.1fs, retrying in %.1fs...",
-                        type(exc).__name__, attempt, _RETRY_MAX_ATTEMPTS, elapsed, delay,
-                    )
-                    time.sleep(delay)
-                    t0 = time.perf_counter()
-                    continue
-                logger.error("LLM request failed after %d attempts (%.1fs): %s",
-                             _RETRY_MAX_ATTEMPTS, elapsed, exc)
-                raise
-            except Exception as exc:
-                elapsed = time.perf_counter() - t0
-                logger.error("LLM request failed after %.1fs: %s", elapsed, exc)
-                raise
+                    return text
+                except (httpx.ReadTimeout, httpx.ConnectError,
+                        httpx.RemoteProtocolError, httpx.ReadError) as exc:
+                    last_exc = exc
+                    elapsed = time.perf_counter() - t0
+                    if attempt < _RETRY_MAX_ATTEMPTS:
+                        delay = min(_RETRY_BASE_DELAY * (2 ** (attempt - 1)), _RETRY_MAX_DELAY)
+                        logger.warning(
+                            "LLM %s on attempt %d/%d after %.1fs, retrying in %.1fs...",
+                            type(exc).__name__, attempt, _RETRY_MAX_ATTEMPTS, elapsed, delay,
+                        )
+                        time.sleep(delay)
+                        t0 = time.perf_counter()
+                        continue
+                    logger.error("LLM request failed after %d attempts (%.1fs): %s",
+                                 _RETRY_MAX_ATTEMPTS, elapsed, exc)
+                    raise
+                except Exception as exc:
+                    elapsed = time.perf_counter() - t0
+                    logger.error("LLM request failed after %.1fs: %s", elapsed, exc)
+                    raise
 
-        assert last_exc is not None
-        raise last_exc
+            assert last_exc is not None
+            raise last_exc
 
     def _raise_api_error(self, response: httpx.Response, elapsed: float) -> None:
         """Raise a clear error for API failures, especially model routing issues."""
@@ -276,10 +356,27 @@ class LLMClient:
                 f"Non-retryable LLM model routing error for model '{self.model}': {message}"
                 f"{suffix}"
             )
+        if any(marker in marker_text for marker in _NON_RETRYABLE_ERROR_MARKERS):
+            raise RuntimeError(
+                f"Non-retryable LLM setup-token/auth error for model '{self.model}': {message}"
+            )
 
         raise RuntimeError(
             f"LLM request failed with HTTP {response.status_code} after {elapsed:.1f}s: {message}"
         )
+
+    @staticmethod
+    def _is_non_retryable_api_error(response: httpx.Response) -> bool:
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {}
+        error = payload.get("error") if isinstance(payload, dict) else None
+        if isinstance(error, dict):
+            text = f"{error.get('code') or ''} {error.get('message') or error}".lower()
+        else:
+            text = response.text.lower()
+        return any(marker in text for marker in _NON_RETRYABLE_ERROR_MARKERS)
 
     def _safe_list_models(self) -> list[str]:
         """Best-effort model inventory for clearer setup-token routing errors."""

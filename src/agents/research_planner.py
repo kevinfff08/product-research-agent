@@ -5,14 +5,16 @@ from __future__ import annotations
 import json
 
 from src.agents.base import BaseAgent
-from src.models.plan import DecompositionResult, ResearchPlan, SearchQuery
+from src.models.plan import DecompositionResult, ResearchPath, ResearchPlan, SearchQuery
 from src.models.common import ResearchWeight
+from src.utils.text_utils import english_search_query, is_useful_english_query
 
 
 _SOURCE_LIMITS = {
     "tavily": 8,
     "code_web": 5,
     "academic_web": 4,
+    "openalex": 4,
     "arxiv": 4,
 }
 
@@ -139,8 +141,7 @@ class ResearchPlanner(BaseAgent):
         """Expand, deduplicate, and cap queries by source/path for broader coverage."""
         expanded = list(queries)
         for path in decomposition.paths:
-            base_terms = [path.title, *path.technologies_needed[:4]]
-            base_terms.extend(path.search_queries.get("web", [])[:3])
+            base_terms = self._english_base_terms(path)
             for term in self._unique_terms(base_terms):
                 expanded.extend(
                     [
@@ -166,14 +167,21 @@ class ResearchPlanner(BaseAgent):
                             intent="repo_discovery",
                         ),
                         SearchQuery(
-                            query=f"{term} benchmark evaluation survey",
+                            query=f"{term} research paper benchmark evaluation",
                             source="academic_web",
                             path_id=path.path_id,
                             priority=max(path.priority - 0.1, 0.1),
                             intent="evidence",
                         ),
                         SearchQuery(
-                            query=f"{term} survey benchmark",
+                            query=f"{term} peer reviewed research survey benchmark",
+                            source="openalex",
+                            path_id=path.path_id,
+                            priority=max(path.priority - 0.12, 0.1),
+                            intent="published_evidence",
+                        ),
+                        SearchQuery(
+                            query=f"{term} recent preprint benchmark",
                             source="arxiv",
                             path_id=path.path_id,
                             priority=max(path.priority - 0.15, 0.1),
@@ -184,8 +192,10 @@ class ResearchPlanner(BaseAgent):
 
         deduped: dict[tuple[str, str, str], SearchQuery] = {}
         for query in expanded:
-            if not query.query.strip():
+            normalized_query = english_search_query(query.query)
+            if not is_useful_english_query(normalized_query):
                 continue
+            query.query = normalized_query
             key = (query.path_id, query.source, self._normalize_query(query.query))
             existing = deduped.get(key)
             if existing is None or query.priority > existing.priority:
@@ -202,6 +212,16 @@ class ResearchPlanner(BaseAgent):
                 sorted(group, key=lambda q: q.priority, reverse=True)[:limit]
             )
         return sorted(optimized, key=lambda q: (q.path_id, q.source, -q.priority, q.query))
+
+    @staticmethod
+    def _english_base_terms(path: ResearchPath) -> list[str]:
+        terms: list[str] = []
+        for source in ("web", "academic", "code"):
+            terms.extend(path.search_queries.get(source, [])[:4])
+        terms.extend(path.technologies_needed[:4])
+        terms.append(path.title)
+        normalized = [english_search_query(term) for term in terms]
+        return [term for term in normalized if is_useful_english_query(term)]
 
     @staticmethod
     def _unique_terms(terms: list[str]) -> list[str]:

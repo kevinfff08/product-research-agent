@@ -9,6 +9,7 @@ research:
       max_web_queries_per_path: 3
       max_code_queries_per_path: 2
       max_academic_queries_per_path: 2
+      max_openalex_queries_per_path: 2
       max_arxiv_queries_per_path: 2
       max_papers_per_query: 5
       max_papers_per_path: 4
@@ -23,6 +24,7 @@ research:
       max_web_queries_per_path: 5
       max_code_queries_per_path: 4
       max_academic_queries_per_path: 3
+      max_openalex_queries_per_path: 3
       max_arxiv_queries_per_path: 3
       max_papers_per_query: 8
       max_papers_per_path: 8
@@ -37,6 +39,7 @@ research:
       max_web_queries_per_path: 8
       max_code_queries_per_path: 5
       max_academic_queries_per_path: 4
+      max_openalex_queries_per_path: 4
       max_arxiv_queries_per_path: 4
       max_papers_per_query: 10
       max_papers_per_path: 12
@@ -62,6 +65,7 @@ api:
 llm:
   default_max_tokens: 16384
   request_timeout: 300
+  setup_token_max_concurrency: 2
   decompose_temperature: 0.5
   analysis_temperature: 0.2
   synthesis_temperature: 0.3

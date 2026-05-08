@@ -78,8 +78,8 @@ def test_query_optimization_deduplicates_and_expands(planner, sample_decompositi
 
     matching = [
         q for q in optimized
-        if q.path_id == "p1" and q.source == "tavily" and q.query == "  AI   code review tools "
+        if q.path_id == "p1" and q.source == "tavily" and q.query == "AI code review tools"
     ]
     assert len(matching) == 1
     assert matching[0].priority == 0.9
-    assert {"code_web", "academic_web", "arxiv"}.issubset({q.source for q in optimized})
+    assert {"code_web", "academic_web", "openalex", "arxiv"}.issubset({q.source for q in optimized})

@@ -13,7 +13,7 @@ from src.apis.tavily_client import TavilyClient
 from src.models.plan import ResearchPath, SearchQuery
 from src.models.engineering import CodeAnalysis, DeploymentAssessment, EngineeringAnalysis
 from src.models.common import SourceReference, SourceType
-from src.utils.text_utils import clean_search_query
+from src.utils.text_utils import english_search_query, is_useful_english_query
 
 
 class EngineeringAnalyst(BaseAgent):
@@ -80,7 +80,10 @@ class EngineeringAnalyst(BaseAgent):
         semaphore = asyncio.Semaphore(self.api_concurrency)
 
         async def search_one(sq: SearchQuery) -> list[dict]:
-            clean_q = clean_search_query(sq.query)
+            clean_q = english_search_query(sq.query)
+            if not is_useful_english_query(clean_q):
+                self.logger.debug("Skipping code query (not useful English): %s", sq.query[:80])
+                return []
             query = (
                 f"{clean_q} open source implementation repository "
                 f"site:github.com OR site:gitlab.com OR site:huggingface.co"

@@ -52,7 +52,7 @@ class SearchQuery(BaseModel):
     """A search query with metadata for execution."""
 
     query: str
-    source: str  # "tavily", "academic_web", "code_web", "arxiv"
+    source: str  # "tavily", "academic_web", "openalex", "code_web", "arxiv"
     path_id: str
     priority: float = 0.5
     intent: str = Field(

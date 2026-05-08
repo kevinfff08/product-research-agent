@@ -8,13 +8,13 @@
 
 - 两阶段输入：标题式输入用于命名和聚焦，详细描述用于说明目标用户、功能、约束和具体问题。
 - 交互式启动：默认入口是 `start` 向导，每一轮都会提示必填/选填、输入格式和示例。
-- 多 Provider LLM：支持 `openai`、`deepseek`、`google` 三类 OpenAI-compatible 调用，也保留 CLIProxyAPI 的 `setup-token` 模式。
+- 多 Provider LLM：支持 `openai`、`deepseek`、`google` 三类 OpenAI-compatible 调用，也保留 CLIProxyAPI 的 `setup-token` 模式；`setup-token` 模式会启用全局 LLM 并发上限，避免本地代理认证和路由被并发打爆。
 - 并行子 Agent：每个研究路径都会并发运行产业、学术、工程三个子 Agent；每个子 Agent 内部也会并发检索和分析。
 - 三层学术搜索：OpenAlex（高影响力已发表论文，含引用数和会议/期刊分级）+ arXiv（最新预印本，含频率限制）+ Tavily（学术网页搜索），自动过滤无关论文。
-- 扩展型搜索规划：围绕产品、竞品、开源仓库、论文、benchmark、社区反馈生成多意图查询，自动清理平台名和无效关键词。
+- 扩展型搜索规划：围绕产品、竞品、开源仓库、论文、benchmark、社区反馈生成多意图英文查询，自动清理平台名、中文残留和无效关键词；最终报告仍保持中文。
 - 中文深度报告：所有提示词和报告输出均使用中文。每项技术含"是什么/原理/优劣/实现建议/证据"详解；每条路线含技术总览、核心技术详解、交叉关联、优劣势总结；额外包含技术关系图谱（互补/替代/依赖链）和交叉分析（产业-学术-工程互证与矛盾）章节。
 - 决策型报告：报告包含摘要、研究问题与方法、决策矩阵、关键论断与证据、技术全景、技术关系图谱、路线深度分析、交叉分析、成熟度图谱、实施工作流、可行性评估、置信度与证据缺口、推荐策略等章节。
-- 统一命名与归档：日志、数据和报告输出均使用 `日期时间_标题` 命名。每次运行在 `output/` 下创建独立子目录存放报告，避免不同运行的产物混在一起。
+- 统一命名与归档：日志、数据和报告输出均使用 `日期时间_标题` 命名。每次运行在 `output/` 下创建独立子目录存放报告，`data/research/<session_id>/` 会保存拆解、计划、查询、每条路线的子 Agent 结果、状态事件和错误信息，便于失败后复盘与恢复。
 - 独立日志：每次运行写入一个独立日志文件，不按文件大小轮转。
 
 ## 快速开始
@@ -102,6 +102,7 @@ cp .env.example .env
 | `<PROVIDER>_BASE_URL` | 自定义 API 地址 | openai: `api.openai.com/v1` / deepseek: `api.deepseek.com` / google: `generativelanguage.googleapis.com/v1beta/openai` |
 | `LLM_MODE` | 认证模式：`api-key` 直连 / `setup-token` CLIProxyAPI | `api-key` |
 | `LLM_PROXY_URL` | CLIProxyAPI 地址（仅 setup-token） | `http://localhost:8317` |
+| `LLM_SETUP_TOKEN_MAX_CONCURRENCY` | CLIProxyAPI `setup-token` 模式下的全局 LLM 并发上限；直连 API key 模式不受影响 | `2` |
 
 所有密钥只放在 `.env` 中，不要写入代码或 `config/default.yaml`。
 
@@ -149,7 +150,7 @@ src/
 config/default.yaml       # 非密钥运行配置
 docs/research/            # 当前调研和设计依据
 docs/archive/             # 过时说明和历史调研资料
-tests/                    # pytest 测试（151 个）
+tests/                    # pytest 测试（155 个）
 ```
 
 ## 输出和日志
@@ -165,6 +166,24 @@ data/research/20260504_120000_实时视频翻译工具/ # 中间产物（拆解�
 ```
 
 日志文件不会按大小轮转；一次运行对应一个日志文件。
+
+中间产物目录会尽量保留完整执行状态：
+
+```text
+data/research/<session_id>/
+  meta.json               # 会话元信息和当前状态
+  llm_preflight.json      # setup-token 模式下的代理连通性、模型清单和并发配置检查
+  decomposition.json      # 产品创意拆解结果
+  plan.json               # 搜索计划
+  queries_by_path.json    # 按研究路线和数据源归档的英文查询
+  events.jsonl            # 流水线事件流
+  error.json              # 顶层失败原因（失败时生成）
+  paths/<path_id>/
+    status.json           # 单条路线状态、查询和子 Agent 错误
+    industry.json
+    academic.json
+    engineering.json
+```
 
 ## 报告结构
 

@@ -53,6 +53,7 @@ _DEPTH_PROFILES: dict[str, dict[str, int]] = {
         "max_web_queries_per_path": 3,
         "max_code_queries_per_path": 2,
         "max_academic_queries_per_path": 2,
+        "max_openalex_queries_per_path": 2,
         "max_arxiv_queries_per_path": 2,
         "max_papers_per_query": 5,
         "max_papers_per_path": 4,
@@ -68,6 +69,7 @@ _DEPTH_PROFILES: dict[str, dict[str, int]] = {
         "max_web_queries_per_path": 5,
         "max_code_queries_per_path": 4,
         "max_academic_queries_per_path": 3,
+        "max_openalex_queries_per_path": 3,
         "max_arxiv_queries_per_path": 3,
         "max_papers_per_query": 8,
         "max_papers_per_path": 8,
@@ -83,6 +85,7 @@ _DEPTH_PROFILES: dict[str, dict[str, int]] = {
         "max_web_queries_per_path": 8,
         "max_code_queries_per_path": 5,
         "max_academic_queries_per_path": 4,
+        "max_openalex_queries_per_path": 4,
         "max_arxiv_queries_per_path": 4,
         "max_papers_per_query": 10,
         "max_papers_per_path": 12,
@@ -106,8 +109,11 @@ class Orchestrator:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         # Build LLM client
+        llm_config = self.config.get("llm", {})
         self.llm = LLMClient(
-            max_tokens=self.config.get("llm", {}).get("default_max_tokens", 8192),
+            max_tokens=llm_config.get("default_max_tokens", 8192),
+            timeout=llm_config.get("request_timeout", 300),
+            setup_token_max_concurrency=llm_config.get("setup_token_max_concurrency"),
         )
 
         # Build API clients
@@ -211,6 +217,8 @@ class Orchestrator:
         )
 
         try:
+            self._preflight_llm(session_id)
+
             # Step 1: Decompose
             self.store.update_session_status(session_id, "decomposing")
             decomposition = self.decomposer.run(
@@ -244,28 +252,35 @@ class Orchestrator:
 
             # Group queries by path and source
             path_queries = self._group_queries(plan)
+            self.store.save_json(
+                f"research/{session_id}/queries_by_path.json",
+                self._serialize_grouped_queries(path_queries),
+            )
 
             # Step 3: Parallel research
             self.store.update_session_status(session_id, "researching")
             max_parallel_paths = depth_settings["max_parallel_paths"]
             path_semaphore = asyncio.Semaphore(max(1, int(max_parallel_paths)))
             research_tasks = [
-                self._run_path_research(
+                asyncio.create_task(self._run_path_research(
+                    session_id,
                     path,
                     path_queries.get(path.path_id, {}),
                     path_semaphore,
-                )
+                ))
                 for path in decomposition.paths
             ]
-            outcomes = await asyncio.gather(*research_tasks, return_exceptions=True)
 
             industry_by_path: dict[str, Any] = {}
             academic_by_path: dict[str, Any] = {}
             engineering_by_path: dict[str, Any] = {}
 
-            for path, outcome in zip(decomposition.paths, outcomes, strict=False):
-                if isinstance(outcome, Exception):
-                    logger.error("Research subagents failed for %s: %s", path.path_id, outcome)
+            for task in asyncio.as_completed(research_tasks):
+                try:
+                    outcome = await task
+                except Exception as exc:
+                    logger.error("Research path task failed unexpectedly: %s", exc, exc_info=True)
+                    self._record_event(session_id, "path_task_failed", error=str(exc))
                     continue
                 path_id, industry_result, academic_result, engineering_result = outcome
                 if industry_result is not None:
@@ -341,6 +356,7 @@ class Orchestrator:
             output_paths = self._write_outputs(report, request.output_format)
 
             self.store.update_session_status(session_id, "completed")
+            self._record_event(session_id, "pipeline_completed", outputs=[str(p) for p in output_paths])
             logger.info(
                 "Research pipeline complete: %s",
                 ", ".join(str(p) for p in output_paths),
@@ -350,6 +366,11 @@ class Orchestrator:
 
         except Exception as exc:
             logger.error("Pipeline failed: %s", exc, exc_info=True)
+            self.store.save_json(
+                f"research/{session_id}/error.json",
+                {"type": type(exc).__name__, "message": str(exc)},
+            )
+            self._record_event(session_id, "pipeline_failed", error=str(exc))
             self.store.update_session_status(session_id, "failed")
             raise
 
@@ -369,18 +390,120 @@ class Orchestrator:
             grouped[pid][source].append(normalized)
         return grouped
 
+    def _preflight_llm(self, session_id: str) -> None:
+        preflight = getattr(self.llm, "preflight", None)
+        if not callable(preflight):
+            return
+        if getattr(self.llm, "mode", "") != "setup-token":
+            return
+        try:
+            result = preflight()
+        except Exception as exc:
+            self.store.save_json(
+                f"research/{session_id}/llm_preflight.json",
+                {"ok": False, "error": str(exc)},
+            )
+            self._record_event(session_id, "llm_preflight_failed", error=str(exc))
+            raise
+        self.store.save_json(f"research/{session_id}/llm_preflight.json", result)
+        self._record_event(
+            session_id,
+            "llm_preflight_ok",
+            model=result.get("model"),
+            setup_token_max_concurrency=result.get("setup_token_max_concurrency"),
+        )
+
+    def _record_event(self, session_id: str, event: str, **payload: Any) -> None:
+        self.store.append_jsonl(
+            f"research/{session_id}/events.jsonl",
+            {"event": event, **payload},
+        )
+
+    @staticmethod
+    def _serialize_grouped_queries(
+        path_queries: dict[str, dict[str, list[SearchQuery]]],
+    ) -> dict[str, dict[str, list[dict[str, Any]]]]:
+        return {
+            path_id: {
+                source: [query.model_dump(mode="json") for query in queries]
+                for source, queries in by_source.items()
+            }
+            for path_id, by_source in path_queries.items()
+        }
+
+    def _save_path_status(
+        self,
+        session_id: str,
+        path: Any,
+        status: str,
+        *,
+        queries_by_source: dict[str, list[SearchQuery]] | None = None,
+        errors: dict[str, str] | None = None,
+    ) -> None:
+        path_dir = f"research/{session_id}/paths/{path.path_id}"
+        payload: dict[str, Any] = {
+            "path_id": path.path_id,
+            "title": path.title,
+            "status": status,
+            "errors": errors or {},
+        }
+        if queries_by_source is not None:
+            payload["queries_by_source"] = self._serialize_grouped_queries(
+                {path.path_id: queries_by_source},
+            ).get(path.path_id, {})
+        self.store.save_json(f"{path_dir}/status.json", payload)
+        self._record_event(session_id, "path_status", path_id=path.path_id, status=status)
+
+    def _persist_path_results(
+        self,
+        session_id: str,
+        path: Any,
+        labels: list[str],
+        results: list[Any | None],
+        errors: dict[str, str],
+        queries_by_source: dict[str, list[SearchQuery]],
+    ) -> None:
+        path_dir = f"research/{session_id}/paths/{path.path_id}"
+        saved = 0
+        for label, result in zip(labels, results, strict=False):
+            if result is None:
+                continue
+            self.store.save_model(f"{path_dir}/{label}.json", result)
+            saved += 1
+        if saved == len(labels):
+            status = "completed"
+        elif saved:
+            status = "partial_failed"
+        else:
+            status = "failed"
+        self._save_path_status(
+            session_id,
+            path,
+            status,
+            queries_by_source=queries_by_source,
+            errors=errors,
+        )
+
     async def _run_path_research(
         self,
+        session_id: str,
         path: Any,
         queries_by_source: dict[str, list[SearchQuery]],
         semaphore: asyncio.Semaphore,
     ) -> tuple[str, Any | None, Any | None, Any | None]:
         """Run industry, academic, and engineering subagents for one path."""
         async with semaphore:
+            self._save_path_status(
+                session_id,
+                path,
+                "running",
+                queries_by_source=queries_by_source,
+            )
             web_queries = queries_by_source.get("tavily", [])
             code_queries = queries_by_source.get("code_web", [])
             academic_queries = [
                 *queries_by_source.get("academic_web", []),
+                *queries_by_source.get("openalex", []),
                 *queries_by_source.get("arxiv", []),
             ]
             logger.info(
@@ -402,12 +525,22 @@ class Orchestrator:
 
         labels = ["industry", "academic", "engineering"]
         normalized: list[Any | None] = []
+        errors: dict[str, str] = {}
         for label, result in zip(labels, results, strict=False):
             if isinstance(result, Exception):
                 logger.error("%s subagent failed for %s: %s", label, path.path_id, result)
+                errors[label] = str(result)
                 normalized.append(None)
             else:
                 normalized.append(result)
+        self._persist_path_results(
+            session_id,
+            path,
+            labels,
+            normalized,
+            errors,
+            queries_by_source,
+        )
         return path.path_id, normalized[0], normalized[1], normalized[2]
 
     def _write_outputs(self, report: ResearchReport, output_format: str) -> list[Path]:
@@ -490,6 +623,7 @@ class Orchestrator:
             "github": "code_web",
             "code": "code_web",
             "semantic_scholar": "academic_web",
+            "open_alex": "openalex",
             "academic": "academic_web",
         }
         normalized = (source or "tavily").strip().lower()

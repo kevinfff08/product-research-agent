@@ -65,6 +65,7 @@ class ArxivClient:
             "sortOrder": sort_order,
         }
 
+        response: httpx.Response | None = None
         for attempt in range(3):
             async with self._rate_lock:
                 gap = time.monotonic() - self._last_request_time
@@ -78,7 +79,11 @@ class ArxivClient:
                 self._last_request_time = time.monotonic()
 
             if response.status_code == 429:
-                wait = 10.0 * (attempt + 1) + random.uniform(0, 5)
+                retry_after = response.headers.get("retry-after", "")
+                try:
+                    wait = float(retry_after)
+                except ValueError:
+                    wait = 10.0 * (attempt + 1) + random.uniform(0, 5)
                 logger.warning(
                     "arXiv 429 on attempt %d/3 for '%s', waiting %.0fs...",
                     attempt + 1, query[:60], wait,
@@ -88,6 +93,11 @@ class ArxivClient:
             if response.status_code >= 400:
                 response.raise_for_status()
             break
+
+        if response is None:
+            raise RuntimeError(f"arXiv search did not receive a response for: {query}")
+        if response.status_code == 429:
+            raise RuntimeError(f"arXiv rate limited after 3 attempts for: {query}")
 
         papers = self._parse_response(response.text)
         logger.info("arXiv returned %d papers for: %s", len(papers), query)

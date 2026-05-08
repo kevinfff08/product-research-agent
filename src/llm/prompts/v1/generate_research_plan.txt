@@ -12,9 +12,10 @@
 - 社区调研：{weight_community}
 
 ## 指令
-针对每条研究路线，为每个数据源生成具体、有针对性的搜索查询（使用英文搜索词以获得最佳结果）：
+针对每条研究路线，为每个数据源生成具体、有针对性的搜索查询。所有 query 字段必须使用英文搜索词；不要输出中文 query，即使产品创意或路线标题是中文：
 - **tavily**：产品、公司、博客文章、文档等网页搜索
 - **academic_web**：论文、benchmark、论文集、模型卡片、Papers with Code等学术网页搜索
+- **openalex**：已发表论文、综述、高引用论文、会议/期刊论文搜索
 - **code_web**：GitHub、GitLab、Hugging Face等平台的开源实现搜索
 - **arxiv**：预印本搜索（使用领域特定术语，不要包含"arxiv"一词）
 
@@ -34,7 +35,7 @@
     "search_queries": [
         {{
             "query": "具体的英文搜索查询",
-            "source": "tavily|academic_web|code_web|arxiv",
+            "source": "tavily|academic_web|openalex|code_web|arxiv",
             "path_id": "p1",
             "priority": 0.9,
             "intent": "product_landscape|alternatives|repo_discovery|evidence|community"

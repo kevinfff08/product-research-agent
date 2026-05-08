@@ -33,6 +33,8 @@ desktop.ini
 # Test
 .pytest_cache/
 .tmp/
+test_tmp*/
+test_mode/
 .hypothesis/
 htmlcov/
 .coverage

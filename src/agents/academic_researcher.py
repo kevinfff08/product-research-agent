@@ -16,7 +16,10 @@ from src.apis.openalex_client import OpenAlexClient
 from src.models.plan import ResearchPath, SearchQuery
 from src.models.academic import PaperAnalysis, AcademicResearchResult
 from src.models.common import SourceReference, SourceType
-from src.utils.text_utils import clean_search_query
+from src.utils.text_utils import (
+    english_search_query,
+    is_useful_english_query,
+)
 
 
 _STOP_WORDS = {
@@ -102,9 +105,9 @@ class AcademicResearcher(BaseAgent):
         ] or a_queries
         arxiv_queries = [q for q in a_queries if q.source == "arxiv"]
         openalex_queries = [q for q in a_queries if q.source == "openalex"]
-        if not openalex_queries and arxiv_queries:
-            openalex_queries = arxiv_queries[: self.max_openalex_queries]
-        if not arxiv_queries and not openalex_queries:
+        if not openalex_queries:
+            openalex_queries = [*web_queries, *arxiv_queries][: self.max_openalex_queries]
+        if not arxiv_queries:
             arxiv_queries = a_queries[: self.max_arxiv_queries]
 
         tasks = [
@@ -139,11 +142,11 @@ class AcademicResearcher(BaseAgent):
         semaphore = asyncio.Semaphore(self.api_concurrency)
 
         async def search_one(sq: SearchQuery) -> list[dict]:
-            clean_q = clean_search_query(sq.query)
-            query = (
-                f'{clean_q} paper benchmark evaluation arxiv '
-                f'OR "Papers with Code" OR proceedings'
-            )
+            clean_q = english_search_query(sq.query)
+            if not is_useful_english_query(clean_q):
+                self.logger.debug("Skipping academic web query (not useful English): %s", sq.query[:80])
+                return []
+            query = self._academic_web_query(clean_q)
             async with semaphore:
                 try:
                     data = await self.academic_search.search(
@@ -163,8 +166,13 @@ class AcademicResearcher(BaseAgent):
                 results.append(item)
             return results
 
+        prepared = self._dedupe_prepared_queries(
+            queries,
+            limit=self.max_academic_queries,
+            source="academic_web",
+        )
         groups = await asyncio.gather(
-            *(search_one(sq) for sq in queries[: self.max_academic_queries]),
+            *(search_one(sq) for sq in prepared),
         )
         return self._dedupe_dicts((item for group in groups for item in group), "url")
 
@@ -176,7 +184,10 @@ class AcademicResearcher(BaseAgent):
         semaphore = asyncio.Semaphore(self.api_concurrency)
 
         async def search_one(sq: SearchQuery) -> list[dict]:
-            clean_q = clean_search_query(sq.query)
+            clean_q = english_search_query(sq.query)
+            if not is_useful_english_query(clean_q):
+                self.logger.debug("Skipping OpenAlex query (not useful English): %s", sq.query[:80])
+                return []
             async with semaphore:
                 try:
                     papers = await self.openalex.search_high_impact(
@@ -195,8 +206,13 @@ class AcademicResearcher(BaseAgent):
                 paper["_source"] = "openalex"
             return papers
 
+        prepared = self._dedupe_prepared_queries(
+            queries,
+            limit=self.max_openalex_queries,
+            source="openalex",
+        )
         groups = await asyncio.gather(
-            *(search_one(sq) for sq in queries[: self.max_openalex_queries]),
+            *(search_one(sq) for sq in prepared),
         )
         return self._dedupe_dicts(
             (item for group in groups for item in group), "paper_id",
@@ -207,11 +223,9 @@ class AcademicResearcher(BaseAgent):
         semaphore = asyncio.Semaphore(self.api_concurrency)
 
         async def search_one(sq: SearchQuery) -> list[dict]:
-            clean_q = clean_search_query(sq.query)
-            # arXiv requires ASCII; skip queries that are primarily non-Latin
-            ascii_only = clean_q.encode("ascii", errors="ignore").decode("ascii").strip()
-            if len(ascii_only) < 5:
-                self.logger.debug("Skipping arXiv query (non-Latin): %s", sq.query[:60])
+            ascii_only = english_search_query(sq.query, ascii_only=True)
+            if not is_useful_english_query(ascii_only):
+                self.logger.debug("Skipping arXiv query (not useful English): %s", sq.query[:80])
                 return []
             async with semaphore:
                 try:
@@ -220,7 +234,7 @@ class AcademicResearcher(BaseAgent):
                         max_results=self.papers_per_query,
                     )
                 except Exception as exc:
-                    self.logger.warning("arXiv search failed for '%s': %s", sq.query, exc)
+                    self.logger.warning("arXiv search failed for '%s': %r", sq.query, exc)
                     return []
             for paper in papers:
                 paper["_query"] = sq.query
@@ -228,10 +242,57 @@ class AcademicResearcher(BaseAgent):
                 paper["_source"] = "arxiv"
             return papers
 
-        groups = await asyncio.gather(
-            *(search_one(sq) for sq in queries[: self.max_arxiv_queries]),
+        prepared = self._dedupe_prepared_queries(
+            queries,
+            limit=self.max_arxiv_queries,
+            ascii_only=True,
+            source="arxiv",
         )
+        groups = await asyncio.gather(*(search_one(sq) for sq in prepared))
         return self._dedupe_dicts((item for group in groups for item in group), "arxiv_id")
+
+    @staticmethod
+    def _academic_web_query(clean_q: str) -> str:
+        additions = []
+        lowered = clean_q.lower()
+        if "paper" not in lowered:
+            additions.append("paper")
+        if "benchmark" not in lowered and "evaluation" not in lowered:
+            additions.append("benchmark evaluation")
+        additions.append('OR "Papers with Code" OR proceedings')
+        return " ".join([clean_q, *additions]).strip()
+
+    def _dedupe_prepared_queries(
+        self,
+        queries: list[SearchQuery],
+        *,
+        limit: int,
+        source: str,
+        ascii_only: bool = False,
+    ) -> list[SearchQuery]:
+        prepared: list[SearchQuery] = []
+        seen: set[str] = set()
+        for sq in queries:
+            clean_q = english_search_query(sq.query, ascii_only=ascii_only)
+            if not is_useful_english_query(clean_q):
+                self.logger.debug("Skipping %s query (not useful English): %s", source, sq.query[:80])
+                continue
+            key = clean_q.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            prepared.append(
+                SearchQuery(
+                    query=clean_q,
+                    source=source,
+                    path_id=sq.path_id,
+                    priority=sq.priority,
+                    intent=sq.intent,
+                )
+            )
+            if len(prepared) >= limit:
+                break
+        return prepared
 
     def _merge_papers(
         self, web_papers: list[dict], arxiv_papers: list[dict],
@@ -265,19 +326,19 @@ class AcademicResearcher(BaseAgent):
         path_terms: set[str] = set()
         # English tech terms (e.g. "transformer", "FastSpeech") — best match
         for tech in self._current_path.technologies_needed:
-            for word in re.split(r"[\s/]+", tech.lower()):
+            for word in re.split(r"[\s/]+", english_search_query(tech).lower()):
                 clean = word.strip(",.()[]{}:;")
                 if len(clean) > 3 and clean not in _STOP_WORDS:
                     path_terms.add(clean)
         # Key questions may contain English keywords
         for q in self._current_path.key_questions:
-            for word in re.findall(r"[a-zA-Z0-9_\-]{4,}", q):
+            for word in re.findall(r"[a-zA-Z0-9_\-]{4,}", english_search_query(q)):
                 path_terms.add(word.lower())
-        # Also break Chinese title into bigrams as fallback — this won't
-        # match English papers, so we skip it.  Instead, look for any
-        # English sub-strings in the path title/description.
         for text in [self._current_path.title, self._current_path.description]:
-            for word in re.findall(r"[a-zA-Z][a-zA-Z0-9_\-\.]{3,}", text):
+            for word in re.findall(r"[a-zA-Z][a-zA-Z0-9_\-\.]{3,}", english_search_query(text)):
+                path_terms.add(word.lower())
+        for item in papers:
+            for word in re.findall(r"[a-zA-Z][a-zA-Z0-9_\-\.]{3,}", english_search_query(item.get("_query", ""))):
                 path_terms.add(word.lower())
 
         if not path_terms:
@@ -299,7 +360,9 @@ class AcademicResearcher(BaseAgent):
                 kept_count, total,
                 ", ".join(sorted(path_terms)[:10]),
             )
-        return kept if kept else papers  # Fall back to all papers if nothing passes
+        if not kept and papers:
+            self.logger.info("Relevance filter kept no papers; falling back to all %d candidates", total)
+        return kept if kept else papers
 
     def _build_paper_records(
         self,

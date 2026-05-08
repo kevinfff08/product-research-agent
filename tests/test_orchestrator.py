@@ -144,6 +144,10 @@ async def test_run_full_pipeline(orchestrator):
     output_files = list(orchestrator.output_dir.glob("*.md"))
     output_files += list(orchestrator.output_dir.glob("*/*.md"))
     assert len(output_files) == 1
+    session_dir = orchestrator.store.data_dir / "research" / report.session_id
+    assert (session_dir / "queries_by_path.json").exists()
+    assert (session_dir / "paths" / "p1" / "status.json").exists()
+    assert (session_dir / "events.jsonl").exists()
 
 
 @pytest.mark.asyncio

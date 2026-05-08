@@ -56,12 +56,14 @@ def test_setup_token_normalizes_proxy_url():
             "LLM_PROVIDER": "openai",
             "LLM_PROXY_URL": "http://localhost:8317",
             "LLM_MODEL": "gpt-5.4",
+            "LLM_SETUP_TOKEN_MAX_CONCURRENCY": "3",
         },
     ):
         client = LLMClient()
 
     assert client.base_url == "http://localhost:8317/v1"
     assert client.model == "gpt-5.4"
+    assert client.setup_token_max_concurrency == 3
 
 
 @respx.mock
@@ -184,3 +186,52 @@ def test_list_models_reads_openai_compatible_inventory():
         client.close()
 
     assert models == ["gpt-5.4", "gpt-5.3-codex"]
+
+
+@respx.mock
+def test_setup_token_preflight_checks_model_inventory():
+    respx.get("http://localhost:8317/v1/models").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": "gpt-5.4"}]}),
+    )
+
+    with patch.dict(
+        "os.environ",
+        {
+            "LLM_MODE": "setup-token",
+            "LLM_PROVIDER": "openai",
+            "LLM_PROXY_URL": "http://localhost:8317",
+            "LLM_MODEL": "gpt-5.4",
+        },
+    ):
+        client = LLMClient()
+        result = client.preflight()
+        client.close()
+
+    assert result["ok"] is True
+    assert result["available_models"] == ["gpt-5.4"]
+
+
+@respx.mock
+def test_auth_unavailable_is_not_retried():
+    route = respx.post("http://localhost:8317/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            503,
+            json={"error": {"code": "auth_unavailable", "message": "no auth available"}},
+        )
+    )
+
+    with patch.dict(
+        "os.environ",
+        {
+            "LLM_MODE": "setup-token",
+            "LLM_PROVIDER": "openai",
+            "LLM_PROXY_URL": "http://localhost:8317",
+            "LLM_MODEL": "gpt-5.4",
+        },
+    ):
+        client = LLMClient()
+        with pytest.raises(RuntimeError, match="Non-retryable LLM setup-token/auth error"):
+            client.generate("test")
+        client.close()
+
+    assert route.call_count == 1
